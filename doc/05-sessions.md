@@ -289,6 +289,87 @@ octomind config --markdown-theme invalid
 
 All themes include headers, code blocks, inline code, lists, emphasis, quotes, and links with appropriate styling.
 
+## Custom Instructions
+
+Octomind supports automatic loading of project-specific instructions that are included in every new session. This feature allows you to provide context, guidelines, or project-specific information that helps the AI understand your project better.
+
+### How It Works
+
+When starting a new session, Octomind automatically checks for a custom instructions file in your current working directory. If found, the content is loaded and added as a user message after the welcome message.
+
+### Configuration
+
+```toml
+# In your config file
+custom_instructions_file_name = "INSTRUCTIONS.md"
+
+# Or via environment variable
+export OCTOMIND_CUSTOM_INSTRUCTIONS_FILE_NAME="PROJECT_GUIDE.md"
+
+# Disable by setting to empty string
+custom_instructions_file_name = ""
+```
+
+### Template Variable Support
+
+Custom instructions files support all the same template variables as system prompts:
+
+```markdown
+# Project: My Awesome Project
+Working Directory: %{CWD}
+Current Role: %{ROLE}
+Date: %{DATE}
+
+## Project Guidelines
+- Follow the existing code patterns in this codebase
+- Use semantic versioning for releases
+- All API changes require documentation updates
+
+## Architecture Notes
+%{SYSTEM}
+
+## Current Project Status
+%{GIT_STATUS}
+```
+
+### Best Practices
+
+1. **Keep it concise**: Focus on essential project information
+2. **Use template variables**: Make instructions dynamic with `%{ROLE}`, `%{CWD}`, etc.
+3. **Project-specific**: Include information unique to your project
+4. **Version control**: Include the instructions file in your repository
+5. **Role-aware**: Use `%{ROLE}` to provide different guidance for different roles
+
+### Example INSTRUCTIONS.md
+
+```markdown
+# %{PROJECT_NAME} Development Guide
+
+**Role**: %{ROLE} | **Directory**: %{CWD} | **Date**: %{DATE}
+
+## Project Overview
+This is a Rust-based AI development assistant using the MCP protocol.
+
+## Development Principles
+- Configuration is template-based with no hardcoded defaults
+- All API keys must be set via environment variables
+- Use batch_edit for multiple file changes
+- Check memories first before investigating new areas
+
+## Key Files
+- `config-templates/default.toml` - Master configuration template
+- `src/config/` - Configuration handling modules
+- `src/session/` - Core session management
+- `src/mcp/` - MCP protocol implementation
+
+## Current Architecture
+%{CONTEXT}
+```
+
+### Caching and Performance
+
+Custom instructions are automatically cached like system prompts, making them token-efficient for repeated use. The content is processed once per session and reused throughout the conversation.
+
 ## Session Management
 
 ### Creating and Managing Sessions

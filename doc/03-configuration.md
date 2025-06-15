@@ -63,6 +63,11 @@ log_level = "none"
 # Default model for all operations (provider:model format)
 model = "openrouter:anthropic/claude-sonnet-4"
 
+# Custom instructions file name (relative to project root)
+# This file will be automatically loaded as a user message in new sessions
+# Set to empty string to disable: custom_instructions_file_name = ""
+custom_instructions_file_name = "INSTRUCTIONS.md"
+
 # Performance & Limits
 mcp_response_warning_threshold = 20000
 max_request_tokens_threshold = 20000
@@ -142,6 +147,78 @@ tools = []
 - **Tool Filtering**: Use `allowed_tools` to limit available tools per role
 - **Builtin Servers**: Developer, filesystem, and octocode are always available
 
+## Custom Instructions File
+
+Octomind supports automatic loading of custom instructions from a project-specific file. This feature allows you to provide context, guidelines, or project-specific information that will be automatically included in every new session.
+
+### Configuration
+
+```toml
+# Custom instructions file name (relative to project root)
+# This file will be automatically loaded as a user message in new sessions
+# Set to empty string to disable: custom_instructions_file_name = ""
+custom_instructions_file_name = "INSTRUCTIONS.md"
+```
+
+### How It Works
+
+1. **Automatic Loading**: When starting a new session, Octomind checks for the configured file in the current working directory
+2. **Template Variables**: The file content supports all template variables (e.g., `%{ROLE}`, `%{CWD}`, `%{DATE}`)
+3. **Session Integration**: Content is added as a user message after the welcome message
+4. **Caching**: Instructions are automatically cached for token efficiency
+5. **Optional**: Can be disabled by setting the filename to an empty string
+
+### Example INSTRUCTIONS.md
+
+```markdown
+# Project: %{PROJECT_NAME}
+Working Directory: %{CWD}
+Current Role: %{ROLE}
+Date: %{DATE}
+
+## Project Guidelines
+- Follow the existing code patterns in this codebase
+- Use the project's specific naming conventions
+- Ensure all changes are backward compatible
+
+## Architecture Notes
+- This is a Rust project using the MCP protocol
+- Configuration is template-based with no hardcoded defaults
+- All API keys must be set via environment variables
+
+## Development Workflow
+- Use batch_edit for multiple file changes
+- Check memories first before investigating
+- Focus on the specific task requested
+```
+
+### Template Variables Available
+
+All standard template variables are supported in custom instructions:
+- `%{ROLE}` - Current role (developer, assistant, etc.)
+- `%{CWD}` - Current working directory
+- `%{DATE}` - Current date and time
+- `%{SYSTEM}` - System information
+- `%{CONTEXT}` - Additional context if available
+
+### Best Practices
+
+1. **Project-Specific**: Include information specific to your project's architecture and conventions
+2. **Role-Aware**: Use `%{ROLE}` to provide role-specific guidance
+3. **Concise**: Keep instructions focused and actionable
+4. **Version Control**: Include the instructions file in your repository for team consistency
+5. **Regular Updates**: Keep instructions current as your project evolves
+
+### Disabling Custom Instructions
+
+To disable the feature entirely:
+
+```toml
+custom_instructions_file_name = ""
+```
+
+Or simply remove/rename the instructions file from your project directory.
+
 ## AI Provider Configuration
 
 ### Required Format
@@ -198,6 +275,7 @@ Environment variables are the PRIMARY method of configuration:
 # 🔧 Global Configuration Overrides
 export OCTOMIND_LOG_LEVEL="debug"
 export OCTOMIND_MODEL="openrouter:anthropic/claude-3.5-sonnet"
+export OCTOMIND_CUSTOM_INSTRUCTIONS_FILE_NAME="PROJECT_GUIDE.md"
 export OCTOMIND_EMBEDDING_PROVIDER="jina"
 
 # 🛠️ Role-Specific Overrides

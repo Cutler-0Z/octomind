@@ -94,6 +94,9 @@ pub struct Config {
 	// Root-level model setting (used by all commands if specified)
 	pub model: String,
 
+	// Custom instructions file name (relative to project root)
+	pub custom_instructions_file_name: String,
+
 	// System-wide configuration settings (not role-specific)
 	pub mcp_response_warning_threshold: usize,
 	pub max_request_tokens_threshold: usize,

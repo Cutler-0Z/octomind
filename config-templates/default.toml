@@ -25,6 +25,11 @@ log_level = "none"
 # Examples: "openrouter:anthropic/claude-3.5-sonnet", "openai:gpt-4o"
 model = "openrouter:anthropic/claude-sonnet-4"
 
+# Custom instructions file name (relative to project root)
+# This file will be automatically loaded as a user message in new sessions
+# Set to empty string to disable: custom_instructions_file_name = ""
+custom_instructions_file_name = "INSTRUCTIONS.md"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE & LIMITS
 # Configure thresholds and performance-related settings

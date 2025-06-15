@@ -338,8 +338,10 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 	}
 }
 // Start a server process based on configuration
-
-// Start a server process based on configuration
+//
+// CRITICAL FIX: MCP servers are isolated from parent process group to prevent
+// them from being killed when Ctrl+C is pressed. MCP servers should be long-running
+// and only terminate when the main program exits, not on session cancellation.
 async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 	// Get command and args from config
 	let command = server.command.as_ref().ok_or_else(|| {
@@ -357,15 +359,33 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 		cmd.args(&server.args);
 	}
 
+	// CRITICAL FIX: Isolate MCP server processes from parent process group
+	// This prevents them from receiving SIGINT when Ctrl+C is pressed in the terminal
+	#[cfg(unix)]
+	{
+		use std::os::unix::process::CommandExt;
+		cmd.process_group(0); // Create new process group (equivalent to setsid)
+	}
+
+	// On Windows, use CREATE_NEW_PROCESS_GROUP to isolate the process
+	#[cfg(windows)]
+	{
+		use std::os::windows::process::CommandExt;
+		cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
+	}
+
 	// Configure standard I/O based on connection type
 	match server.connection_type {
 		McpConnectionType::Http => {
 			// For HTTP mode, we pipe stdout/stderr but don't need stdin
 			cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-			// Start the process
+			// Start the process with signal isolation
 			// Debug output
-			crate::log_debug!("🚀 Starting MCP server (HTTP mode): {}", server.name);
+			crate::log_debug!(
+				"🚀 Starting MCP server (HTTP mode, signal-isolated): {}",
+				server.name
+			);
 			let child = cmd.spawn().map_err(|e| {
 				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name, e)
 			})?;
@@ -417,9 +437,12 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 				.stdout(Stdio::piped())
 				.stderr(Stdio::piped());
 
-			// Start the process
+			// Start the process with signal isolation
 			// Debug output
-			crate::log_debug!("🚀 Starting MCP server (stdin mode): {}", server.name);
+			crate::log_debug!(
+				"🚀 Starting MCP server (stdin mode, signal-isolated): {}",
+				server.name
+			);
 			let mut child = cmd.spawn().map_err(|e| {
 				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name, e)
 			})?;

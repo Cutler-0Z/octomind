@@ -100,31 +100,6 @@ pub async fn perform_context_reduction(
 
 	match response_result {
 		Ok(summary_content) => {
-			// Log restoration point for recovery
-			let _ = crate::session::logger::log_restoration_point(
-				&chat_session.session.info.name,
-				"Context summarization",
-				&summary_content,
-			);
-
-			// Log to session file as well
-			if let Some(session_file) = &chat_session.session.session_file {
-				let restoration_data = serde_json::json!({
-					"type": "context_reduction",
-					"summary": summary_content,
-					"original_message_count": original_message_count,
-					"timestamp": std::time::SystemTime::now()
-						.duration_since(std::time::UNIX_EPOCH)
-						.unwrap_or_default()
-						.as_secs()
-				});
-				let restoration_json = serde_json::to_string(&restoration_data)?;
-				let _ = crate::session::append_to_session_file(
-					session_file,
-					&format!("RESTORATION_POINT: {}", restoration_json),
-				);
-			}
-
 			println!("{}", "Context summarization complete".bright_green());
 
 			// SMART TRUNCATION: Keep only system message + summary as assistant message
@@ -149,6 +124,31 @@ pub async fn perform_context_reduction(
 				.add_message("assistant", &summary_content);
 			let last_index = chat_session.session.messages.len() - 1;
 			chat_session.session.messages[last_index].cached = true; // Mark for caching
+
+			// NOW log restoration point AFTER the assistant message is properly added
+			let _ = crate::session::logger::log_restoration_point(
+				&chat_session.session.info.name,
+				"/done - Task completion and context optimization",
+				&summary_content,
+			);
+
+			// Log to session file as well
+			if let Some(session_file) = &chat_session.session.session_file {
+				let restoration_data = serde_json::json!({
+					"type": "context_reduction",
+					"summary": summary_content,
+					"original_message_count": original_message_count,
+					"timestamp": std::time::SystemTime::now()
+						.duration_since(std::time::UNIX_EPOCH)
+						.unwrap_or_default()
+						.as_secs()
+				});
+				let restoration_json = serde_json::to_string(&restoration_data)?;
+				let _ = crate::session::append_to_session_file(
+					session_file,
+					&format!("RESTORATION_POINT: {}", restoration_json),
+				);
+			}
 
 			// Reset token tracking for fresh start
 			chat_session.session.current_non_cached_tokens = 0;

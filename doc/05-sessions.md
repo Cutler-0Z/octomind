@@ -224,6 +224,7 @@ Octomind supports dynamic system variables that can be used in prompts and syste
 - **`%{OS}`** - Operating system information with architecture and platform details
 - **`%{BINARIES}`** - List of available development tools and their versions (one per line)
 - **`%{CWD}`** - Current working directory
+- **`%{ROLE}`** - Current session role (developer, assistant, etc.)
 - **`%{GIT_STATUS}`** - Git repository status
 - **`%{GIT_TREE}`** - Git file tree
 - **`%{README}`** - Project README content

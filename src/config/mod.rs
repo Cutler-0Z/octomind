@@ -252,7 +252,8 @@ impl Config {
 			static DEFAULT_ROLE_CONFIG: RoleConfig = RoleConfig {
 				enable_layers: false,
 				system: None,
-				temperature: 0.7, // Fallback temperature for unknown roles
+				welcome: String::new(), // Empty welcome for unknown roles
+				temperature: 0.7,       // Fallback temperature for unknown roles
 			};
 			static DEFAULT_MCP_CONFIG: RoleMcpConfig = RoleMcpConfig {
 				server_refs: Vec::new(),

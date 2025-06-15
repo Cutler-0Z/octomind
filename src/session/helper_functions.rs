@@ -367,6 +367,15 @@ async fn get_os_info() -> String {
 
 // Smart async version of process_placeholders - only gathers data for placeholders that exist in the prompt
 pub async fn process_placeholders_async(prompt: &str, project_dir: &Path) -> String {
+	process_placeholders_async_with_role(prompt, project_dir, None).await
+}
+
+// Extended version with optional role support for welcome messages and other role-specific content
+pub async fn process_placeholders_async_with_role(
+	prompt: &str,
+	project_dir: &Path,
+	role: Option<&str>,
+) -> String {
 	let mut processed_prompt = prompt.to_string();
 
 	// Check which placeholders are actually in the prompt to avoid unnecessary work
@@ -375,6 +384,7 @@ pub async fn process_placeholders_async(prompt: &str, project_dir: &Path) -> Str
 	let needs_os = prompt.contains("%{OS}");
 	let needs_binaries = prompt.contains("%{BINARIES}");
 	let needs_cwd = prompt.contains("%{CWD}");
+	let needs_role = prompt.contains("%{ROLE}");
 	let needs_system = prompt.contains("%{SYSTEM}"); // System info: date, shell, OS, binaries, CWD
 	let needs_context = prompt.contains("%{CONTEXT}"); // Project info: README, git status, git tree
 	let needs_git_status = prompt.contains("%{GIT_STATUS}");
@@ -387,6 +397,7 @@ pub async fn process_placeholders_async(prompt: &str, project_dir: &Path) -> Str
 		&& !needs_os
 		&& !needs_binaries
 		&& !needs_cwd
+		&& !needs_role
 		&& !needs_system
 		&& !needs_context
 		&& !needs_git_status
@@ -451,6 +462,15 @@ pub async fn process_placeholders_async(prompt: &str, project_dir: &Path) -> Str
 	// Add CWD if needed
 	if needs_cwd {
 		placeholders.insert("%{CWD}", project_dir.to_string_lossy().to_string());
+	}
+
+	// Add role if needed and provided
+	if needs_role {
+		if let Some(role_name) = role {
+			placeholders.insert("%{ROLE}", role_name.to_string());
+		} else {
+			placeholders.insert("%{ROLE}", "unknown".to_string());
+		}
 	}
 
 	// Add project context placeholders only if needed

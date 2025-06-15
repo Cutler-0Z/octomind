@@ -104,6 +104,7 @@ pub async fn execute(args: &VarsArgs, _config: &Config) -> Result<()> {
 				"%{OS}" => "Operating system information",
 				"%{BINARIES}" => "Available development tools and their versions",
 				"%{CWD}" => "Current working directory",
+				"%{ROLE}" => "Current session role (developer, assistant, etc.)",
 				"%{SYSTEM}" => "Complete system information (date, shell, OS, binaries, CWD)",
 				"%{CONTEXT}" => "Project context information (README, git status, git tree)",
 				"%{GIT_STATUS}" => "Git repository status",

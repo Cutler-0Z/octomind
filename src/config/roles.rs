@@ -24,6 +24,8 @@ pub struct RoleConfig {
 	pub enable_layers: bool,
 	// Custom system prompt
 	pub system: Option<String>,
+	// Custom welcome message with variable support
+	pub welcome: String,
 	// Temperature for AI responses (0.0 to 1.0) - STRICT: must be in config
 	pub temperature: f32,
 }

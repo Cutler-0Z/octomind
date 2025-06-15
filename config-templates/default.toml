@@ -31,7 +31,7 @@ model = "openrouter:anthropic/claude-sonnet-4"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Warn when MCP tool responses exceed this token count (0 = disable warnings)
-mcp_response_warning_threshold = 20000
+mcp_response_warning_threshold = 10000
 
 # Maximum tokens per request before auto-truncation kicks in (0 = no limit)
 max_request_tokens_threshold = 20000
@@ -115,7 +115,6 @@ layer_refs = ["query_processor", "context_generator"]
 # System prompt for developer role (uses built-in developer prompt if not specified)
 # Default developer system prompt:
 system = """You are an Octomind – top notch fully autonomous AI developer that act with best pracises like a Senior level developer.
-Current working dir: %{CWD}
 
 **DEVELOPMENT APPROACH:**
 1. Analyze problems thoroughly first by thinking through solution step-by-step
@@ -154,6 +153,10 @@ IMPORTANT:
 - Do not sidetrack and *FOCUS* specifically on requested task to be completed
 - Make sure when you refactor code or do changes, you do not remove critical parts of the codebase."""
 
+# Welcome message for developer role (uses template variables like system prompt)
+# Default developer welcome message:
+welcome = "Hello! Octomind ready to serve you. Working dir: %{CWD} (Role: %{ROLE})"
+
 # MCP configuration for developer role
 mcp = { server_refs = ["developer", "filesystem", "agent", "octocode"], allowed_tools = [] }
 
@@ -164,8 +167,12 @@ enable_layers = false
 temperature = 0.7
 layer_refs = []
 system = "You are a helpful assistant."
+
+# Welcome message for assistant role
+welcome = "Hello! Octomind ready to assist you. Working dir: %{CWD} (Role: %{ROLE})"
+
 # MCP configuration for assistant role
-mcp = { server_refs = ["filesystem"], allowed_tools = [] }
+mcp = { server_refs = ["filesystem"], allowed_tools = ["list_files"] }
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MCP (MODEL CONTEXT PROTOCOL) SERVERS

@@ -255,15 +255,16 @@ pub async fn run_interactive_session<T: clap::Args + std::fmt::Debug>(
 			);
 		}
 
-		// Add assistant welcome message
-		let welcome_message = format!(
-			"Hello! Octomind ready to serve you. Working dir: {} (Role: {})",
-			current_dir
-				.file_name()
-				.unwrap_or_default()
-				.to_string_lossy(),
-			session_args.role
-		);
+		// Add assistant welcome message with variable processing
+		let role_config = config.get_role_config_struct(&session_args.role);
+		let welcome_message =
+			crate::session::helper_functions::process_placeholders_async_with_role(
+				&role_config.welcome,
+				&current_dir,
+				Some(&session_args.role),
+			)
+			.await;
+
 		chat_session.add_assistant_message(
 			&welcome_message,
 			None,
@@ -271,9 +272,15 @@ pub async fn run_interactive_session<T: clap::Args + std::fmt::Debug>(
 			&session_args.role,
 		)?;
 
-		// Print welcome message with colors if terminal supports them
-		use colored::*;
-		println!("{}", welcome_message.bright_green());
+		// Apply cache marker to welcome message as well for consistency
+		if supports_caching {
+			let cache_manager = crate::session::cache::CacheManager::new();
+			cache_manager.add_automatic_cache_markers(
+				&mut chat_session.session.messages,
+				has_tools,
+				supports_caching,
+			);
+		}
 	} else {
 		// Print the last few messages for context with colors if terminal supports them
 		let last_messages = chat_session

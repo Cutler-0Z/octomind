@@ -329,6 +329,7 @@ mod tests {
 version = 1
 log_level = "none"
 model = "openrouter:anthropic/claude-sonnet-4"
+custom_instructions_file_name = "INSTRUCTIONS.md"
 mcp_response_warning_threshold = 20000
 max_request_tokens_threshold = 20000
 enable_auto_truncation = false
@@ -344,6 +345,7 @@ name = "developer"
 enable_layers = true
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test developer role."
 mcp = { server_refs = ["developer"], allowed_tools = [] }
 
 [[roles]]
@@ -351,6 +353,7 @@ name = "assistant"
 enable_layers = false
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test assistant role."
 mcp = { server_refs = ["filesystem"], allowed_tools = [] }
 
 [[roles]]
@@ -358,6 +361,7 @@ name = "tester"
 enable_layers = false
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test tester role."
 mcp = { server_refs = ["octocode", "clt"], allowed_tools = [] }
 
 [mcp]
@@ -399,6 +403,7 @@ servers = []
 version = 1
 log_level = "debug"
 model = "openrouter:anthropic/claude-sonnet-4"
+custom_instructions_file_name = "INSTRUCTIONS.md"
 mcp_response_warning_threshold = 20000
 max_request_tokens_threshold = 20000
 enable_auto_truncation = false
@@ -414,6 +419,7 @@ name = "developer"
 enable_layers = true
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test developer role."
 mcp = { server_refs = ["developer"], allowed_tools = [] }
 
 [[roles]]
@@ -421,6 +427,7 @@ name = "assistant"
 enable_layers = false
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test assistant role."
 mcp = { server_refs = ["filesystem"], allowed_tools = [] }
 
 [[roles]]
@@ -428,6 +435,7 @@ name = "tester"
 enable_layers = false
 temperature = 0.7
 layer_refs = []
+welcome = "Hello! Test tester role."
 mcp = { server_refs = ["octocode", "clt"], allowed_tools = [] }
 
 [mcp]

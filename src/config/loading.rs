@@ -323,54 +323,48 @@ impl Config {
 mod tests {
 	use super::*;
 
-	#[test]
-	fn test_role_parsing() {
-		let test_config = r#"
-version = 1
-log_level = "none"
-model = "openrouter:anthropic/claude-sonnet-4"
-custom_instructions_file_name = "INSTRUCTIONS.md"
-mcp_response_warning_threshold = 20000
-max_request_tokens_threshold = 20000
-enable_auto_truncation = false
-cache_tokens_threshold = 2048
-cache_timeout_seconds = 240
-use_long_system_cache = true
-enable_markdown_rendering = true
-markdown_theme = "default"
-max_session_spending_threshold = 0.0
+	// Helper function to load and modify the default config template for testing
+	fn get_test_config_with_custom_role() -> String {
+		// Load the default config template
+		let template_content = include_str!("../../config-templates/default.toml");
 
-[[roles]]
-name = "developer"
-enable_layers = true
-temperature = 0.7
-layer_refs = []
-welcome = "Hello! Test developer role."
-mcp = { server_refs = ["developer"], allowed_tools = [] }
+		// Add a custom "tester" role to the template for testing
+		let mut config = template_content.to_string();
 
-[[roles]]
-name = "assistant"
-enable_layers = false
-temperature = 0.7
-layer_refs = []
-welcome = "Hello! Test assistant role."
-mcp = { server_refs = ["filesystem"], allowed_tools = [] }
+		// Add the tester role configuration
+		config.push_str(
+			r#"
 
+# Test role for unit testing
 [[roles]]
 name = "tester"
 enable_layers = false
 temperature = 0.7
 layer_refs = []
+system = "You are a test assistant."
 welcome = "Hello! Test tester role."
 mcp = { server_refs = ["octocode", "clt"], allowed_tools = [] }
 
-[mcp]
-allowed_tools = []
-servers = []
-"#;
+# Additional test MCP servers for tester role
+[[mcp.servers]]
+name = "clt"
+type = "stdin"
+command = "clt"
+args = ["mcp"]
+timeout_seconds = 30
+tools = []
+"#,
+		);
+
+		config
+	}
+
+	#[test]
+	fn test_role_parsing() {
+		let test_config = get_test_config_with_custom_role();
 
 		// Parse the config
-		let mut config: Config = toml::from_str(test_config).expect("Failed to parse test config");
+		let mut config: Config = toml::from_str(&test_config).expect("Failed to parse test config");
 		config.build_role_map();
 
 		// Verify roles were parsed
@@ -393,87 +387,26 @@ servers = []
 
 		// Test get_merged_config_for_mode for custom role
 		let merged_config = config.get_merged_config_for_role("tester");
-		assert_eq!(merged_config.mcp.servers.len(), 0); // No actual servers in test config, but server_refs should be processed
-		                                          // The server_refs would be used to filter actual servers from the mcp.servers list
+		// The merged config should only include servers that are referenced by the tester role
+		let server_names: Vec<&str> = merged_config
+			.mcp
+			.servers
+			.iter()
+			.map(|s| s.name.as_str())
+			.collect();
+		assert!(server_names.contains(&"octocode"));
+		assert!(server_names.contains(&"clt"));
+		// Should not contain servers not referenced by the tester role
+		assert!(!server_names.contains(&"developer"));
+		assert!(!server_names.contains(&"filesystem"));
 	}
 
 	#[test]
 	fn test_role_merged_config() {
-		let test_config = r#"
-version = 1
-log_level = "debug"
-model = "openrouter:anthropic/claude-sonnet-4"
-custom_instructions_file_name = "INSTRUCTIONS.md"
-mcp_response_warning_threshold = 20000
-max_request_tokens_threshold = 20000
-enable_auto_truncation = false
-cache_tokens_threshold = 2048
-cache_timeout_seconds = 240
-use_long_system_cache = true
-enable_markdown_rendering = true
-markdown_theme = "default"
-max_session_spending_threshold = 0.0
-
-[[roles]]
-name = "developer"
-enable_layers = true
-temperature = 0.7
-layer_refs = []
-welcome = "Hello! Test developer role."
-mcp = { server_refs = ["developer"], allowed_tools = [] }
-
-[[roles]]
-name = "assistant"
-enable_layers = false
-temperature = 0.7
-layer_refs = []
-welcome = "Hello! Test assistant role."
-mcp = { server_refs = ["filesystem"], allowed_tools = [] }
-
-[[roles]]
-name = "tester"
-enable_layers = false
-temperature = 0.7
-layer_refs = []
-welcome = "Hello! Test tester role."
-mcp = { server_refs = ["octocode", "clt"], allowed_tools = [] }
-
-[mcp]
-allowed_tools = []
-
-[[mcp.servers]]
-name = "developer"
-type = "builtin"
-timeout_seconds = 30
-args = []
-tools = []
-
-[[mcp.servers]]
-name = "filesystem"
-type = "builtin"
-timeout_seconds = 30
-args = []
-tools = []
-
-[[mcp.servers]]
-name = "octocode"
-type = "stdin"
-command = "octocode"
-args = ["mcp", "--path=."]
-timeout_seconds = 30
-tools = []
-
-[[mcp.servers]]
-name = "clt"
-type = "stdin"
-command = "clt"
-args = ["mcp"]
-timeout_seconds = 30
-tools = []
-"#;
+		let test_config = get_test_config_with_custom_role();
 
 		// Parse the config
-		let mut config: Config = toml::from_str(test_config).expect("Failed to parse test config");
+		let mut config: Config = toml::from_str(&test_config).expect("Failed to parse test config");
 		config.build_role_map();
 
 		// Test that the merged config for tester role only includes the specified servers

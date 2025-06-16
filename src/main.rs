@@ -38,6 +38,9 @@ enum Commands {
 	/// Start an interactive coding session
 	Session(commands::SessionArgs),
 
+	/// Execute a single AI request using session infrastructure (non-interactive)
+	Run(commands::RunArgs),
+
 	/// Ask a question and get an AI response without session management
 	Ask(commands::AskArgs),
 
@@ -85,6 +88,15 @@ async fn run_with_cleanup(args: CliArgs, config: Config) -> Result<(), anyhow::E
 				// Continue anyway - servers can be started on-demand if needed
 			}
 		}
+		Commands::Run(run_args) => {
+			// For run command, initialize MCP servers based on the role
+			let role = &run_args.role;
+			let config_for_role = config.get_merged_config_for_role(role);
+			if let Err(e) = octomind::mcp::initialize_servers_for_role(&config_for_role).await {
+				eprintln!("Warning: Failed to initialize MCP servers: {}", e);
+				// Continue anyway - servers can be started on-demand if needed
+			}
+		}
 		_ => {
 			// Other commands don't need MCP servers
 		}
@@ -95,6 +107,16 @@ async fn run_with_cleanup(args: CliArgs, config: Config) -> Result<(), anyhow::E
 		Commands::Config(config_args) => commands::config::execute(config_args, config)?,
 		Commands::Session(session_args) => {
 			session::chat::run_interactive_session(session_args, &config).await?
+		}
+		Commands::Run(run_args) => {
+			// Convert RunArgs to SessionArgs and run non-interactively
+			let session_args = run_args.to_session_args();
+			session::chat::run_interactive_session_with_input(
+				&session_args,
+				&config,
+				&run_args.input,
+			)
+			.await?
 		}
 		Commands::Ask(ask_args) => commands::ask::execute(ask_args, &config).await?,
 		Commands::Shell(shell_args) => commands::shell::execute(shell_args, &config).await?,

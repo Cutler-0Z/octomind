@@ -14,6 +14,7 @@
 
 pub mod ask;
 pub mod config;
+pub mod run;
 pub mod session;
 pub mod shell;
 pub mod vars;
@@ -21,6 +22,7 @@ pub mod vars;
 // Re-export all the command structs and enums
 pub use ask::AskArgs;
 pub use config::ConfigArgs;
+pub use run::RunArgs;
 pub use session::SessionArgs;
 pub use shell::ShellArgs;
 pub use vars::VarsArgs;

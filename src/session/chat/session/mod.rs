@@ -21,5 +21,5 @@ mod runner;
 mod utils;
 
 pub use core::ChatSession;
-pub use runner::run_interactive_session;
+pub use runner::{run_interactive_session, run_interactive_session_with_input};
 pub use utils::format_number;

@@ -52,7 +52,9 @@ pub use layered_response::process_layered_response;
 pub use markdown::{is_markdown_content, MarkdownRenderer, MarkdownTheme};
 pub use message_handler::MessageHandler;
 pub use response::process_response;
-pub use session::{format_number, run_interactive_session, ChatSession};
+pub use session::{
+	format_number, run_interactive_session, run_interactive_session_with_input, ChatSession,
+};
 pub use tool_processor::ToolProcessor;
 
 // Model constants

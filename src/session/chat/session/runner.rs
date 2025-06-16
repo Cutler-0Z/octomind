@@ -14,7 +14,7 @@
 
 // Interactive session runner
 
-use super::super::animation::show_loading_animation;
+use super::super::animation::{show_loading_animation, show_no_animation};
 use super::super::commands::*;
 use super::super::context_truncation::check_and_truncate_context;
 use super::super::input::read_user_input;
@@ -1364,12 +1364,12 @@ pub async fn run_interactive_session_with_input<T: clap::Args + std::fmt::Debug>
 		}
 	}
 
-	// Show loading animation - same as interactive
+	// Show no animation for non-interactive mode
 	let animation_cancel = Arc::new(AtomicBool::new(false));
 	let animation_cancel_clone = animation_cancel.clone();
 	let current_cost = chat_session.session.info.total_cost;
 	let animation_task = tokio::spawn(async move {
-		let _ = show_loading_animation(animation_cancel_clone, current_cost).await;
+		let _ = show_no_animation(animation_cancel_clone, current_cost).await;
 	});
 
 	// Auto-accept spending threshold for non-interactive mode

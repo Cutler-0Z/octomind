@@ -60,3 +60,12 @@ pub async fn show_loading_animation(cancel_flag: Arc<AtomicBool>, cost: f64) -> 
 
 	Ok(())
 }
+
+// No-op animation for non-interactive mode (like run command)
+pub async fn show_no_animation(cancel_flag: Arc<AtomicBool>, _cost: f64) -> Result<()> {
+	// Just wait for cancellation without showing any visual animation
+	while !cancel_flag.load(Ordering::SeqCst) {
+		tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+	}
+	Ok(())
+}

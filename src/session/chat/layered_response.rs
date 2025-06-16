@@ -34,8 +34,8 @@ pub async fn process_layered_response(
 	// Debug output
 	// println!("{}", "Using layered processing architecture...".cyan());
 
-	// Add user message to the session at the beginning
-	chat_session.add_user_message(input)?;
+	// NOTE: We do NOT add the user message here because the main session will add it
+	// after layer processing is complete. This avoids duplicate message addition.
 
 	// Ensure system message is cached before processing with layers
 	// This is important because system messages contain all the function definitions

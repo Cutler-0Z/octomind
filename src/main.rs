@@ -109,14 +109,12 @@ async fn run_with_cleanup(args: CliArgs, config: Config) -> Result<(), anyhow::E
 			session::chat::run_interactive_session(session_args, &config).await?
 		}
 		Commands::Run(run_args) => {
+			// Get input from parameter or stdin
+			let input = run_args.get_input()?;
 			// Convert RunArgs to SessionArgs and run non-interactively
 			let session_args = run_args.to_session_args();
-			session::chat::run_interactive_session_with_input(
-				&session_args,
-				&config,
-				&run_args.input,
-			)
-			.await?
+			session::chat::run_interactive_session_with_input(&session_args, &config, &input)
+				.await?
 		}
 		Commands::Ask(ask_args) => commands::ask::execute(ask_args, &config).await?,
 		Commands::Shell(shell_args) => commands::shell::execute(shell_args, &config).await?,

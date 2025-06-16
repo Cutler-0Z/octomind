@@ -13,12 +13,13 @@
 // limitations under the License.
 
 use clap::Args;
+use std::io::{self, IsTerminal, Read};
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
-	/// Input to process with AI
+	/// Input to process with AI (optional if reading from stdin)
 	#[arg(value_name = "INPUT")]
-	pub input: String,
+	pub input: Option<String>,
 
 	/// Name of the session to start or resume
 	#[arg(long, short)]
@@ -50,6 +51,30 @@ impl RunArgs {
 			model: self.model.clone(),
 			temperature: self.temperature,
 			role: self.role.clone(),
+		}
+	}
+
+	/// Get the actual input, either from parameter or stdin
+	pub fn get_input(&self) -> Result<String, anyhow::Error> {
+		if let Some(input) = &self.input {
+			// Input provided as parameter
+			Ok(input.clone())
+		} else if !std::io::stdin().is_terminal() {
+			// Read from stdin if it's being piped
+			let mut buffer = String::new();
+			io::stdin().read_to_string(&mut buffer)?;
+			let input = buffer.trim().to_string();
+
+			if input.is_empty() {
+				return Err(anyhow::anyhow!("No input provided via stdin"));
+			}
+
+			Ok(input)
+		} else {
+			// No input provided and stdin is a terminal
+			Err(anyhow::anyhow!(
+				"No input provided. Please provide input as a parameter or pipe it via stdin."
+			))
 		}
 	}
 }

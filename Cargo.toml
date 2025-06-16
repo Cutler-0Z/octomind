@@ -20,7 +20,7 @@ panic = "abort"  # Abort on panic for smaller binary size
 strip = true      # Strip symbols from binary
 
 [dependencies]
-tokio = { version = "1.45.1", features = ["full"] }
+tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros", "time", "process", "fs", "sync"] }
 crossterm = "0.29.0"
 parking_lot = "0.12.4"
 chrono = "0.4.41"

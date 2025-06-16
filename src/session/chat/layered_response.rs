@@ -31,12 +31,6 @@ pub async fn process_layered_response(
 	role: &str,
 	operation_cancelled: Arc<AtomicBool>,
 ) -> Result<String> {
-	// Debug output
-	// println!("{}", "Using layered processing architecture...".cyan());
-
-	// NOTE: We do NOT add the user message here because the main session will add it
-	// after layer processing is complete. This avoids duplicate message addition.
-
 	// Ensure system message is cached before processing with layers
 	// This is important because system messages contain all the function definitions
 	// and developer context needed for the layered processing
@@ -97,6 +91,10 @@ pub async fn process_layered_response(
 			return Err(e);
 		}
 	};
+
+	// This is important to add message as USER here for automatic processing next
+	// We already added messages from output before as ASSISTANT
+	chat_session.add_user_message(input)?;
 
 	// Stop the animation using the separate animation flag
 	animation_cancel.store(true, Ordering::SeqCst);

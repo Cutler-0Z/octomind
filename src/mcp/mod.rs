@@ -757,10 +757,18 @@ fn handle_large_response(
 		std::io::stdin().read_line(&mut input).unwrap_or_default();
 
 		if !input.trim().to_lowercase().starts_with('y') {
-			// CRITICAL FIX: User declined large output. Instead of creating a fake response
-			// that might violate MCP schemas, we return an error that will cause the tool_use
-			// block to be removed from the conversation entirely. This is MCP-compliant.
-			return Err(anyhow::anyhow!("LARGE_OUTPUT_DECLINED_BY_USER: User declined to process large output with {} tokens", estimated_tokens));
+			// User declined large output. Return an MCP-compliant error result instead of
+			// breaking the communication flow. This allows the conversation to continue
+			// normally while informing the AI that the user declined the large output.
+			println!(
+				"{}",
+				"Large output declined by user. Continuing conversation...".bright_red()
+			);
+			return Ok(McpToolResult::error(
+				result.tool_name.clone(),
+				result.tool_id.clone(),
+				format!("User declined to process large output ({} tokens). The tool executed successfully but the output was too large and the user chose not to include it in the conversation to avoid excessive token usage.", estimated_tokens)
+			));
 		}
 
 		// User confirmed, continue with original result

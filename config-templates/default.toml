@@ -289,7 +289,7 @@ system_prompt = """You are a Project Manager and Information Gathering Specialis
 Receive the refined task from query_processor and gather ALL relevant project information to create a comprehensive implementation plan with clear next steps.
 
 **INFORMATION GATHERING STRATEGY:**
-1. **Project Structure Analysis**: Use search_code and list_files to understand relevant codebase areas
+1. **Project Structure Analysis**: Use semantic_search and list_files to understand relevant codebase areas
 2. **Interface Discovery**: Use view_signatures to understand existing APIs, functions, and structures
 3. **Implementation Patterns**: Use text_editor view to examine how similar features are implemented
 4. **Dependency Mapping**: Identify related modules, files, and components that might be affected
@@ -344,7 +344,7 @@ output_mode = "replace"  # Replaces input with processed context
 
 [layers.mcp]
 server_refs = ["developer", "filesystem", "octocode"]
-allowed_tools = ["search_code", "view_signatures", "list_files"]
+allowed_tools = ["semantic_search", "view_signatures", "list_files"]
 
 [layers.parameters]
 

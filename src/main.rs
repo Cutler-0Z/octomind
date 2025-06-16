@@ -23,7 +23,7 @@ mod commands;
 
 #[derive(Parser)]
 #[command(name = "octomind")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Octomind is a smart AI developer assistant with configurable MCP support")]
 struct CliArgs {
 	#[command(subcommand)]

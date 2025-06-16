@@ -80,22 +80,316 @@ impl GenericLayer {
 		messages
 	}
 
-	/// Execute MCP tool calls for this layer using the unified parallel execution logic
-	async fn execute_layer_tool_calls(
+	/// Process recursive tool calls using the same logic as main sessions
+	/// This ensures layers have full recursive tool call support
+	#[allow(clippy::too_many_arguments)]
+	async fn process_recursive_tool_calls(
 		&self,
-		tool_calls: &[crate::mcp::McpToolCall],
+		initial_output: String,
+		initial_exchange: crate::session::ProviderExchange,
+		initial_tool_calls: Option<Vec<crate::mcp::McpToolCall>>,
+		messages: Vec<Message>,
+		effective_model: String,
+		layer_config: Config,
+		layer_start: std::time::Instant,
+		mut total_api_time_ms: u64,
+		mut total_tool_time_ms: u64,
 		config: &Config,
-	) -> Result<(Vec<crate::mcp::McpToolResult>, u64)> {
-		// Use the unified parallel tool execution logic
-		crate::session::chat::response::tool_execution::execute_layer_tool_calls_parallel(
-			tool_calls.to_vec(),
-			format!("layer_{}", self.config.name), // Generate session name for layer
-			&self.config,                          // Pass the layer config
-			self.config.name.clone(),
-			config, // Pass the main config
-			None,   // No cancellation support for layers yet
+		operation_cancelled: Arc<AtomicBool>,
+	) -> Result<LayerResult> {
+		// Create a mock chat session for the layer to use the unified response processing
+		let mut layer_chat_session =
+			self.create_layer_chat_session(messages, &effective_model, &layer_config);
+
+		// Process the response using the same recursive logic as main sessions
+		let mut current_content = initial_output;
+		let mut current_exchange = initial_exchange;
+		let mut current_tool_calls_param = initial_tool_calls;
+
+		// Initialize tool processor for layer context
+		let _tool_processor = crate::session::chat::ToolProcessor::new();
+
+		// Main recursive processing loop - same as main sessions
+		loop {
+			// Check for cancellation at the start of each loop iteration
+			if operation_cancelled.load(Ordering::SeqCst) {
+				return Err(anyhow::anyhow!("Operation cancelled"));
+			}
+
+			// Check for tool calls if MCP has any servers configured for this layer
+			if !self.config.mcp.server_refs.is_empty() {
+				// Resolve current tool calls for this iteration (same logic as main sessions)
+				let current_tool_calls =
+					self.resolve_layer_tool_calls(&mut current_tool_calls_param, &current_content);
+
+				if !current_tool_calls.is_empty() {
+					// Add assistant message with tool calls preserved
+					self.add_layer_assistant_message_with_tool_calls(
+						&mut layer_chat_session,
+						&current_content,
+						&current_exchange,
+					)?;
+
+					// Execute all tool calls in parallel using the unified system
+					let (tool_results, tool_time) = crate::session::chat::response::tool_execution::execute_layer_tool_calls_parallel(
+						current_tool_calls,
+						format!("layer_{}", self.config.name),
+						&self.config,
+						self.config.name.clone(),
+						config,
+						Some(operation_cancelled.clone()),
+					).await?;
+
+					total_tool_time_ms += tool_time;
+
+					// Final cancellation check after all tools processed
+					if operation_cancelled.load(Ordering::SeqCst) {
+						return Err(anyhow::anyhow!("Operation cancelled"));
+					}
+
+					// Process tool results if any exist (same logic as main sessions)
+					if !tool_results.is_empty() {
+						// Use a simplified version of tool result processing for layers
+						if let Some((new_content, new_exchange, new_tool_calls)) = self
+							.process_layer_tool_results(
+								tool_results,
+								&mut layer_chat_session,
+								&effective_model,
+								&layer_config,
+								operation_cancelled.clone(),
+							)
+							.await?
+						{
+							// Track API time from follow-up exchange
+							if let Some(ref usage) = new_exchange.usage {
+								if let Some(api_time) = usage.request_time_ms {
+									total_api_time_ms += api_time;
+								}
+							}
+
+							// Update current content for next iteration
+							current_content = new_content;
+							current_exchange = new_exchange;
+							current_tool_calls_param = new_tool_calls;
+
+							// Check if there are more tools to process
+							if current_tool_calls_param.is_some()
+								&& !current_tool_calls_param.as_ref().unwrap().is_empty()
+							{
+								// Continue processing the new content with tool calls
+								continue;
+							} else {
+								// Check if there are more tool calls in the content itself
+								let more_tools = crate::mcp::parse_tool_calls(&current_content);
+								if !more_tools.is_empty() {
+									continue;
+								} else {
+									// No more tool calls, break out of the loop
+									break;
+								}
+							}
+						} else {
+							// No follow-up response (cancelled or error), exit
+							break;
+						}
+					} else {
+						// No tool results - check if there were more tools to execute directly
+						let more_tools = crate::mcp::parse_tool_calls(&current_content);
+						if !more_tools.is_empty() {
+							// If there are more tool calls later in the response, continue processing
+							continue;
+						} else {
+							// No more tool calls, exit the loop
+							break;
+						}
+					}
+				} else {
+					// No tool calls in this content, break out of the loop
+					break;
+				}
+			} else {
+				// MCP not enabled for this layer, break out of the loop
+				break;
+			}
+		}
+
+		// Extract token usage from the final exchange (after all recursive tool processing)
+		let token_usage = current_exchange.usage.clone();
+
+		// Calculate total layer processing time
+		let layer_duration = layer_start.elapsed();
+		let total_time_ms = layer_duration.as_millis() as u64;
+
+		// Return the result with time tracking using the final processed output
+		Ok(LayerResult {
+			output: current_content,
+			exchange: current_exchange,
+			token_usage,
+			tool_calls: current_tool_calls_param,
+			api_time_ms: total_api_time_ms,
+			tool_time_ms: total_tool_time_ms,
+			total_time_ms,
+		})
+	}
+
+	/// Helper function to resolve current tool calls (same logic as main sessions)
+	fn resolve_layer_tool_calls(
+		&self,
+		current_tool_calls_param: &mut Option<Vec<crate::mcp::McpToolCall>>,
+		current_content: &str,
+	) -> Vec<crate::mcp::McpToolCall> {
+		if let Some(calls) = current_tool_calls_param.take() {
+			// Use the tool calls from the API response only once
+			if !calls.is_empty() {
+				calls
+			} else {
+				crate::mcp::parse_tool_calls(current_content) // Fallback
+			}
+		} else {
+			// For follow-up iterations, parse from content if any new tool calls exist
+			crate::mcp::parse_tool_calls(current_content)
+		}
+	}
+
+	/// Helper function to add assistant message with tool calls preserved (layer version)
+	fn add_layer_assistant_message_with_tool_calls(
+		&self,
+		layer_session: &mut crate::session::chat::session::ChatSession,
+		current_content: &str,
+		current_exchange: &crate::session::ProviderExchange,
+	) -> Result<()> {
+		// Extract the original tool_calls from the exchange response
+		let original_tool_calls =
+			crate::session::chat::MessageHandler::extract_original_tool_calls(current_exchange);
+
+		// Create the assistant message directly with tool_calls preserved from the exchange
+		let assistant_message = Message {
+			role: "assistant".to_string(),
+			content: current_content.to_string(),
+			timestamp: std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap_or_default()
+				.as_secs(),
+			cached: false,
+			tool_call_id: None,
+			name: None,
+			tool_calls: original_tool_calls,
+			images: None,
+		};
+
+		// Add the assistant message to the session
+		layer_session.session.messages.push(assistant_message);
+
+		Ok(())
+	}
+
+	/// Create a mock chat session for layer processing
+	fn create_layer_chat_session(
+		&self,
+		messages: Vec<Message>,
+		model: &str,
+		_layer_config: &Config,
+	) -> crate::session::chat::session::ChatSession {
+		// Create a minimal session for the layer
+		let mut session = crate::session::Session::new(
+			format!("layer_{}", self.config.name),
+			model.to_string(),
+			"layer".to_string(),
+		);
+		session.messages = messages;
+
+		crate::session::chat::session::ChatSession {
+			session,
+			model: model.to_string(),
+			temperature: self.config.temperature,
+			last_response: String::new(),
+			estimated_cost: 0.0,
+			cache_next_user_message: false,
+			pending_image: None,
+			spending_threshold_checkpoint: 0.0,
+		}
+	}
+
+	/// Process tool results for layers (simplified version of main session logic)
+	async fn process_layer_tool_results(
+		&self,
+		tool_results: Vec<crate::mcp::McpToolResult>,
+		layer_session: &mut crate::session::chat::session::ChatSession,
+		model: &str,
+		layer_config: &Config,
+		operation_cancelled: Arc<AtomicBool>,
+	) -> Result<
+		Option<(
+			String,
+			crate::session::ProviderExchange,
+			Option<Vec<crate::mcp::McpToolCall>>,
+		)>,
+	> {
+		// Add each tool result as a tool message
+		for tool_result in &tool_results {
+			let tool_content = if let Some(output) = tool_result.result.get("output") {
+				if let Some(output_str) = output.as_str() {
+					output_str.to_string()
+				} else {
+					serde_json::to_string(output).unwrap_or_default()
+				}
+			} else {
+				serde_json::to_string(&tool_result.result).unwrap_or_default()
+			};
+
+			layer_session.session.messages.push(Message {
+				role: "tool".to_string(),
+				content: tool_content,
+				timestamp: std::time::SystemTime::now()
+					.duration_since(std::time::UNIX_EPOCH)
+					.unwrap_or_default()
+					.as_secs(),
+				cached: false,
+				tool_call_id: Some(tool_result.tool_id.clone()),
+				name: Some(tool_result.tool_name.clone()),
+				tool_calls: None,
+				images: None,
+			});
+		}
+
+		// Check for cancellation before making another request
+		if operation_cancelled.load(Ordering::SeqCst) {
+			return Ok(None);
+		}
+
+		// Make follow-up API call with tool results
+		match crate::session::chat_completion_with_provider(
+			&layer_session.session.messages,
+			model,
+			self.config.temperature,
+			layer_config,
 		)
 		.await
+		{
+			Ok(response) => {
+				// Check if there are more tool calls to process
+				let has_more_tools = if let Some(ref calls) = response.tool_calls {
+					!calls.is_empty()
+				} else {
+					!crate::mcp::parse_tool_calls(&response.content).is_empty()
+				};
+
+				if has_more_tools {
+					Ok(Some((
+						response.content,
+						response.exchange,
+						response.tool_calls,
+					)))
+				} else {
+					// No more tool calls, return final result
+					Ok(Some((response.content, response.exchange, None)))
+				}
+			}
+			Err(e) => {
+				println!("{} {}", "Error processing layer tool results:".red(), e);
+				Err(e)
+			}
+		}
 	}
 }
 
@@ -119,7 +413,7 @@ impl Layer for GenericLayer {
 		// Track total layer processing time
 		let layer_start = std::time::Instant::now();
 		let mut total_api_time_ms = 0;
-		let mut total_tool_time_ms = 0;
+		let total_tool_time_ms = 0;
 
 		// Check if operation was cancelled
 		if operation_cancelled.load(Ordering::SeqCst) {
@@ -169,93 +463,23 @@ impl Layer for GenericLayer {
 
 			// If there are tool calls, process them using this layer's MCP configuration
 			if !tool_calls.is_empty() {
-				let output_clone = output.clone();
-
-				// Execute all tool calls and collect results using layer-specific MCP config
-				let (tool_results, tool_execution_time) =
-					self.execute_layer_tool_calls(tool_calls, config).await?;
-				total_tool_time_ms += tool_execution_time;
-
-				// If we have results, send them back to the model to get a final response
-				if !tool_results.is_empty() {
-					println!("{}", "Processing tool results...".cyan());
-
-					// Create a new session context for tool result processing
-					let mut layer_session = messages.clone();
-
-					// Add assistant's response with tool calls
-					layer_session.push(Message {
-						role: "assistant".to_string(),
-						content: output_clone,
-						timestamp: std::time::SystemTime::now()
-							.duration_since(std::time::UNIX_EPOCH)
-							.unwrap_or_default()
-							.as_secs(),
-						cached: false,
-						tool_call_id: None,
-						name: None,
-						tool_calls: None,
-						images: None,
-					});
-
-					// Add each tool result as a tool message
-					for tool_result in &tool_results {
-						layer_session.push(Message {
-							role: "tool".to_string(),
-							content: serde_json::to_string(&tool_result.result).unwrap_or_default(),
-							timestamp: std::time::SystemTime::now()
-								.duration_since(std::time::UNIX_EPOCH)
-								.unwrap_or_default()
-								.as_secs(),
-							cached: false,
-							tool_call_id: Some(tool_result.tool_id.clone()),
-							name: Some(tool_result.tool_name.clone()),
-							tool_calls: None,
-							images: None,
-						});
-					}
-
-					// Call the model again with tool results using this layer's model and config
-					match crate::session::chat_completion_with_provider(
-						&layer_session,
-						&effective_model,
-						self.config.temperature,
-						&layer_config,
+				// Use the unified response processing system for recursive tool call handling
+				// This ensures layers have the same recursive tool call support as main sessions
+				return self
+					.process_recursive_tool_calls(
+						output,
+						exchange,
+						direct_tool_calls,
+						messages,
+						effective_model,
+						layer_config,
+						layer_start,
+						total_api_time_ms,
+						total_tool_time_ms,
+						config,
+						operation_cancelled,
 					)
-					.await
-					{
-						Ok(response) => {
-							// Track API time from the second exchange
-							if let Some(ref usage) = response.exchange.usage {
-								if let Some(api_time) = usage.request_time_ms {
-									total_api_time_ms += api_time;
-								}
-							}
-
-							// Extract token usage if available
-							let token_usage = response.exchange.usage.clone();
-
-							// Calculate total layer processing time
-							let layer_duration = layer_start.elapsed();
-							let total_time_ms = layer_duration.as_millis() as u64;
-
-							// Return the result with the updated output and time tracking
-							return Ok(LayerResult {
-								output: response.content,
-								exchange: response.exchange,
-								token_usage,
-								tool_calls: response.tool_calls,
-								api_time_ms: total_api_time_ms,
-								tool_time_ms: total_tool_time_ms,
-								total_time_ms,
-							});
-						}
-						Err(e) => {
-							println!("{} {}", "Error processing tool results:".red(), e);
-							// Continue with the original output
-						}
-					}
-				}
+					.await;
 			}
 		}
 

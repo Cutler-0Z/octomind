@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.3.0] - 2025-06-16
+
+### 📋 Release Summary
+
+This release introduces customizable chat sessions with support for custom instruction files, role-based welcome messages, and enhanced command output handling. Several improvements streamline session context management and configuration options. Multiple bug fixes enhance stability by addressing error handling, session state preservation, and server process isolation.
+
+
+### ✨ Features
+
+- **session**: add support for custom instructions file in chat sessions (f90c6e61)
+- **config**: add role-based welcome messages and %{ROLE} variable (3af97d99)
+- **session**: add output_mode handling for command results (8cb4fc57)
+- **session**: add filtering to display session context command (2e17ac7e)
+
+### 🐛 Bug Fixes
+
+- **mcp**: return compliant error on user decline of large output (e304ac02)
+- **mcp**: isolate server processes to ignore Ctrl+C termination (3da2fce7)
+- **session**: remove broken assistant message on empty tool results (a07250ee)
+- **session**: remove user message on API call failure to prevent poll... (dab04601)
+- **session**: preserve conversation state after tool execution interr... (2b18c71a)
+
+### 🔧 Other Changes
+
+- **docker**: add .dockerignore to exclude unnecessary files (9958f82e)
+- **cargo**: remove unused dependencies from Cargo.lock (0001157b)
+- **deps**: upgrade multiple dependencies to latest versions (2fa4bfe1)
+- **cli**: use dynamic version from Cargo.toml in CLI (3b6c902f)
+- **config**: add custom instructions file feature documentation (445e3421)
+- **instructions**: add detailed AI project guide and config principles (53d7b004)
+- **session**: move context reduction logging after message update (1084f94d)
+- **mcp**: replace server_type with type and remove mode field (c6305838)
+- **config**: remove octocode availability check and builtin flags (f7a7aeee)
+- **commands**: move reduce command from layers to commands defin... (640b4831)
+- **layers**: simplify layers and remove unused configs (a40ecca4)
+- **changelog**: reformat changelog entries for consistency (d777f1d5)
+
+### 📊 Commit Summary
+
+**Total commits**: 21
+- ✨ 4 new features
+- 🐛 5 bug fixes
+- 🔧 12 other changes
+
 All notable changes to this project will be documented in this file.
 
 ## [0.2.0] - 2025-06-14

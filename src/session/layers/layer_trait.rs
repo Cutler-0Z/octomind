@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 // Layer result that contains data returned from a layer's processing
 pub struct LayerResult {
-	pub output: String,
+	pub outputs: Vec<String>, // All text outputs from layer processing
 	pub exchange: ProviderExchange,
 	pub token_usage: Option<TokenUsage>,
 	pub tool_calls: Option<Vec<crate::mcp::McpToolCall>>,

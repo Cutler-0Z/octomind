@@ -122,11 +122,11 @@ async fn process_layer_as_agent(
 
 	// Return combined result: layer output + session messages
 	let final_result = if all_messages.is_empty() {
-		result.output
+		result.outputs.last().unwrap_or(&String::new()).clone()
 	} else {
 		format!(
 			"{}\n\n--- Session Messages ---\n{}",
-			result.output,
+			result.outputs.last().unwrap_or(&String::new()),
 			all_messages.join("\n")
 		)
 	};

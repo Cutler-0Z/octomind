@@ -207,7 +207,12 @@ impl LayeredOrchestrator {
 				.await?;
 
 			println!("{}", "Output:".bright_green());
-			println!("{}", result.output);
+			for (i, output) in result.outputs.iter().enumerate() {
+				if result.outputs.len() > 1 {
+					println!("--- Output {} ---", i + 1);
+				}
+				println!("{}", output);
+			}
 
 			// Track token usage stats
 			if let Some(usage) = &result.token_usage {
@@ -310,27 +315,32 @@ impl LayeredOrchestrator {
 					println!("{}", "Output mode: none (intermediate layer)".bright_cyan());
 				}
 				OutputMode::Append => {
-					// Add layer output as new message to session
+					// Add all layer outputs as assistant messages to session
 					println!(
 						"{}",
-						"Output mode: append (adding to session)".bright_cyan()
+						"Output mode: append (adding all layer outputs)".bright_cyan()
 					);
-					session.add_message("assistant", &result.output);
+					// Add each output as a separate assistant message
+					for output_text in &result.outputs {
+						session.add_message("assistant", output_text);
+					}
 				}
 				OutputMode::Replace => {
-					// Replace entire session with this layer's output
+					// Replace entire session with all layer outputs
 					println!(
 						"{}",
-						"Output mode: replace (replacing session content)".bright_cyan()
+						"Output mode: replace (replacing with all layer outputs)".bright_cyan()
 					);
-					// Clear existing messages and replace with layer output
+					// Clear existing messages and add all layer outputs
 					session.messages.clear();
-					session.add_message("assistant", &result.output);
+					for output_text in &result.outputs {
+						session.add_message("assistant", output_text);
+					}
 				}
 			}
 
-			// Take the output from this layer and use it as input for the next layer
-			current_input = result.output.clone();
+			// Take the LAST output from this layer and use it as input for the next layer
+			current_input = result.outputs.last().unwrap_or(&String::new()).clone();
 		}
 
 		// Display completion info

@@ -131,7 +131,7 @@ pub async fn execute_command_layer(
 			.unwrap_or_default()
 			.as_secs(),
 			"command": command_name,
-			"output_length": result.output.len(),
+			"output_length": result.outputs.iter().map(|s| s.len()).sum::<usize>(),
 			"usage": result.token_usage
 		});
 		let _ = crate::session::append_to_session_file(
@@ -190,9 +190,10 @@ pub async fn execute_command_layer(
 				"{}",
 				"Output mode: append (adding to session)".bright_cyan()
 			);
-			chat_session
-				.session
-				.add_message("assistant", &result.output);
+			// Add all command outputs as assistant messages to session
+			for output_text in &result.outputs {
+				chat_session.session.add_message("assistant", output_text);
+			}
 
 			// Log the append operation for session restoration
 			if let Some(session_file) = &chat_session.session.session_file {
@@ -203,7 +204,7 @@ pub async fn execute_command_layer(
 						.unwrap_or_default()
 						.as_secs(),
 					"command": command_name,
-					"content_length": result.output.len()
+					"content_length": result.outputs.iter().map(|s| s.len()).sum::<usize>()
 				});
 				let _ = crate::session::append_to_session_file(
 					session_file,
@@ -231,7 +232,7 @@ pub async fn execute_command_layer(
 						.as_secs(),
 					"command": command_name,
 					"previous_message_count": chat_session.session.messages.len(),
-					"content_length": result.output.len()
+					"content_length": result.outputs.iter().map(|s| s.len()).sum::<usize>()
 				});
 				let _ = crate::session::append_to_session_file(
 					session_file,
@@ -239,18 +240,18 @@ pub async fn execute_command_layer(
 				);
 			}
 
-			// Clear existing messages and replace with command output
+			// Clear existing messages and replace with all command outputs
 			chat_session.session.messages.clear();
-			chat_session
-				.session
-				.add_message("assistant", &result.output);
+			for output_text in &result.outputs {
+				chat_session.session.add_message("assistant", output_text);
+			}
 
 			// Save session to persist the replacement
 			let _ = chat_session.save();
 		}
 	}
 
-	Ok(result.output)
+	Ok(result.outputs.last().unwrap_or(&String::new()).clone())
 }
 
 /// List all available command layers for the current role

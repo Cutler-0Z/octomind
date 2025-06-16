@@ -234,7 +234,7 @@ impl Layer for LayerProcessor {
 
 							// Return the result with the updated output
 							return Ok(LayerResult {
-								output: response.content,
+								outputs: vec![response.content],
 								exchange: response.exchange,
 								token_usage,
 								tool_calls: response.tool_calls,
@@ -257,7 +257,7 @@ impl Layer for LayerProcessor {
 
 		// Return the result
 		Ok(LayerResult {
-			output,
+			outputs: vec![output],
 			exchange,
 			token_usage,
 			tool_calls: direct_tool_calls,

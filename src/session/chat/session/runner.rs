@@ -648,6 +648,9 @@ pub async fn run_interactive_session<T: clap::Args + std::fmt::Debug>(
 				continue;
 			}
 
+			// Track session message count before layer processing
+			let messages_before_layers = chat_session.session.messages.len();
+
 			// Process using layered architecture to get improved input
 			// Each layer processes function calls with its own model internally,
 			// so the final output already incorporates all function call results
@@ -667,17 +670,36 @@ pub async fn run_interactive_session<T: clap::Args + std::fmt::Debug>(
 						continue;
 					}
 
-					// Use the processed input from layers instead of the original input
-					// This processed input already includes any function call responses
-					input = processed_input;
+					// Check if layers modified the session (added messages via output_mode)
+					let messages_after_layers = chat_session.session.messages.len();
+					let layers_modified_session = messages_after_layers > messages_before_layers;
 
-					// Mark that we've processed the first message through layers
-					first_message_processed = true;
+					if layers_modified_session {
+						// Layers used output_mode append/replace and added messages to session
+						// Skip adding user message to avoid duplicates
+						log_info!(
+							"Layers modified session ({} messages added). Skipping user message addition.",
+							messages_after_layers - messages_before_layers
+						);
 
-					log_info!(
-						"{}",
-						"Layers processing complete. Using enhanced input for main model."
-					);
+						// Mark that we've processed the first message through layers
+						first_message_processed = true;
+
+						// Continue to next iteration - session already has the layer messages
+						continue;
+					} else {
+						// Layers didn't modify session (all had output_mode = none)
+						// Use the processed input from layers instead of the original input
+						input = processed_input;
+
+						// Mark that we've processed the first message through layers
+						first_message_processed = true;
+
+						log_info!(
+							"{}",
+							"Layers processing complete. Using enhanced input for main model."
+						);
+					}
 				}
 				Err(e) => {
 					// Check for cancellation in error case

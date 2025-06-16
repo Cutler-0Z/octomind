@@ -102,9 +102,12 @@ impl GenericLayer {
 			self.create_layer_chat_session(messages, &effective_model, &layer_config);
 
 		// Process the response using the same recursive logic as main sessions
-		let mut current_content = initial_output;
+		let mut current_content = initial_output.clone();
 		let mut current_exchange = initial_exchange;
 		let mut current_tool_calls_param = initial_tool_calls;
+
+		// Collect all text outputs during processing
+		let mut outputs = vec![initial_output.clone()];
 
 		// Initialize tool processor for layer context
 		let _tool_processor = crate::session::chat::ToolProcessor::new();
@@ -168,9 +171,12 @@ impl GenericLayer {
 							}
 
 							// Update current content for next iteration
-							current_content = new_content;
+							current_content = new_content.clone();
 							current_exchange = new_exchange;
 							current_tool_calls_param = new_tool_calls;
+
+							// Add the new content to our outputs collection
+							outputs.push(new_content);
 
 							// Check if there are more tools to process
 							if current_tool_calls_param.is_some()
@@ -222,7 +228,7 @@ impl GenericLayer {
 
 		// Return the result with time tracking using the final processed output
 		Ok(LayerResult {
-			output: current_content,
+			outputs,
 			exchange: current_exchange,
 			token_usage,
 			tool_calls: current_tool_calls_param,
@@ -492,7 +498,7 @@ impl Layer for GenericLayer {
 
 		// Return the result with time tracking
 		Ok(LayerResult {
-			output,
+			outputs: vec![output],
 			exchange,
 			token_usage,
 			tool_calls: direct_tool_calls,

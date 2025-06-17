@@ -13,15 +13,14 @@
 // limitations under the License.
 
 // File System MCP provider - modular structure
-// Handles file operations and HTML to Markdown conversion
+// Handles file operations
 
 pub mod core;
 pub mod directory;
 pub mod file_ops;
 pub mod functions;
-pub mod html_converter;
 pub mod text_editing;
 
 // Re-export main functionality
-pub use core::{execute_html2md, execute_list_files, execute_text_editor};
+pub use core::{execute_list_files, execute_text_editor};
 pub use functions::get_all_functions;

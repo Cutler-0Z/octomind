@@ -15,7 +15,7 @@
 // Core functionality and shared utilities for file system operations
 
 use super::super::{McpToolCall, McpToolResult};
-use crate::mcp::fs::{directory, file_ops, html_converter, text_editing};
+use crate::mcp::fs::{directory, file_ops, text_editing};
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use serde_json::{json, Value};
@@ -365,21 +365,4 @@ pub async fn execute_list_files(
 	}
 
 	directory::execute_list_files(call).await
-}
-
-// Execute HTML to Markdown conversion
-pub async fn execute_html2md(
-	call: &McpToolCall,
-	cancellation_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-) -> Result<McpToolResult> {
-	use std::sync::atomic::Ordering;
-
-	// Check for cancellation before starting
-	if let Some(ref token) = cancellation_token {
-		if token.load(Ordering::SeqCst) {
-			return Err(anyhow!("HTML to Markdown conversion cancelled"));
-		}
-	}
-
-	html_converter::execute_html2md(call).await
 }

@@ -277,58 +277,7 @@ pub fn get_text_editor_function() -> McpFunction {
 	}
 }
 
-pub fn get_html2md_function() -> McpFunction {
-	McpFunction {
-		name: "html2md".to_string(),
-		description: "Convert HTML content to Markdown format from URLs or local files.
-
-			This tool converts HTML content from web URLs or local HTML files to clean, readable Markdown.
-			It's particularly useful for:
-			- Reading documentation from websites in a more consumable format
-			- Converting HTML files to Markdown for easier analysis
-			- Processing web content without dealing with HTML tags
-
-			The tool automatically detects whether the input is a URL or file path and:
-			- Fetches content from URLs and converts to Markdown
-			- Reads local HTML files and converts to Markdown
-			- Handles proper conversion of HTML elements to Markdown equivalents
-			- Cleans up whitespace and formatting
-			- Preserves document structure and readability
-
-			Supports multiple inputs for batch processing:
-			- Single input: `{\"sources\": \"https://example.com/docs\"}`
-			- Multiple inputs: `{\"sources\": [\"./docs/index.html\", \"https://example.com/api\"]}`
-
-			Output is clean Markdown that preserves the document structure and readability."
-			.to_string(),
-		parameters: json!({
-			"type": "object",
-			"required": ["sources"],
-			"properties": {
-				"sources": {
-					"description": "URL(s) or file path(s) to convert from HTML format to Markdown. Can be a single string or an array of strings.",
-					"oneOf": [
-						{
-							"type": "string"
-						},
-						{
-							"type": "array",
-							"items": {
-								"type": "string"
-							}
-						}
-					]
-				}
-			}
-		}),
-	}
-}
-
 // Get all available filesystem functions
 pub fn get_all_functions() -> Vec<McpFunction> {
-	vec![
-		get_text_editor_function(),
-		get_list_files_function(),
-		get_html2md_function(),
-	]
+	vec![get_text_editor_function(), get_list_files_function()]
 }

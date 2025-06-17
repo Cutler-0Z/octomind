@@ -26,7 +26,7 @@ use tokio::fs as tokio_fs;
 use url::Url;
 
 // Execute HTML to Markdown conversion
-pub async fn execute_html2md(call: &McpToolCall) -> Result<McpToolResult> {
+pub async fn execute_read_html(call: &McpToolCall) -> Result<McpToolResult> {
 	// Extract sources parameter
 	let sources_value = match call.parameters.get("sources") {
 		Some(value) => value,
@@ -64,7 +64,7 @@ async fn convert_single_html_to_md(call: &McpToolCall, source: &str) -> Result<M
 	let markdown = html_to_markdown(&html_content)?;
 
 	Ok(McpToolResult {
-		tool_name: "html2md".to_string(),
+		tool_name: "read_html".to_string(),
 		tool_id: call.tool_id.clone(),
 		result: json!({
 				"success": true,
@@ -109,7 +109,7 @@ async fn convert_multiple_html_to_md(
 	}
 
 	Ok(McpToolResult {
-		tool_name: "html2md".to_string(),
+		tool_name: "read_html".to_string(),
 		tool_id: call.tool_id.clone(),
 		result: json!({
 			"success": !conversions.is_empty(),

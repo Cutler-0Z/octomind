@@ -169,7 +169,7 @@ pub fn guess_tool_category(tool_name: &str) -> &'static str {
 		"core" => "system",
 		"text_editor" => "developer",
 		"list_files" => "filesystem",
-		"html2md" => "web",
+		"read_html" => "web",
 		name if name.contains("file") || name.contains("editor") => "developer",
 		name if name.contains("search") || name.contains("find") => "search",
 		name if name.contains("image") || name.contains("photo") => "media",
@@ -645,16 +645,6 @@ async fn try_execute_tool_call(
 							result.tool_id = call.tool_id.clone();
 							return Ok(result);
 						}
-						"html2md" => {
-							crate::log_debug!(
-								"Executing html2md via filesystem server '{}'",
-								target_server.name
-							);
-							let mut result =
-								fs::execute_html2md(call, cancellation_token.clone()).await?;
-							result.tool_id = call.tool_id.clone();
-							return Ok(result);
-						}
 						"list_files" => {
 							crate::log_debug!(
 								"Executing list_files via filesystem server '{}'",
@@ -703,6 +693,16 @@ async fn try_execute_tool_call(
 							);
 							let mut result =
 								web::execute_web_search(call, cancellation_token.clone()).await?;
+							result.tool_id = call.tool_id.clone();
+							return Ok(result);
+						}
+						"read_html" => {
+							crate::log_debug!(
+								"Executing read_html via web server '{}'",
+								target_server.name
+							);
+							let mut result =
+								web::execute_read_html(call, cancellation_token.clone()).await?;
 							result.tool_id = call.tool_id.clone();
 							return Ok(result);
 						}

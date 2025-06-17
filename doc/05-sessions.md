@@ -708,7 +708,7 @@ Layers can affect the session in different ways:
 - **shell**: Execute shell commands
 - **text_editor**: Edit files
 - **list_files**: Browse directories
-- **html2md**: Convert HTML to Markdown
+- **read_html**: Convert HTML to Markdown
 
 #### Development Tools
 - **Project analysis**: Built-in code understanding

@@ -12,10 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Handles web search operations using Brave Search API
+// Handles web search operations using Brave Search API and HTML conversion
+
+use super::{McpToolCall, McpToolResult};
+use anyhow::Result;
 
 pub mod functions;
+pub mod html_converter;
 pub mod search;
 
 pub use functions::get_all_functions;
 pub use search::execute_web_search;
+
+// Execute HTML to Markdown conversion with cancellation support
+pub async fn execute_read_html(
+	call: &McpToolCall,
+	cancellation_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<McpToolResult> {
+	use std::sync::atomic::Ordering;
+
+	// Check for cancellation before starting
+	if let Some(ref token) = cancellation_token {
+		if token.load(Ordering::SeqCst) {
+			return Err(anyhow::anyhow!("HTML to Markdown conversion cancelled"));
+		}
+	}
+
+	html_converter::execute_read_html(call).await
+}

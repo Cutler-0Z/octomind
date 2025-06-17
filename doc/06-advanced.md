@@ -20,7 +20,7 @@ MCP enables AI models to use external tools and services through a standardized 
 #### Filesystem Tools (type: "builtin")
 - **text_editor**: Read, write, edit files with multiple operations (view, create, str_replace, insert, line_replace, undo_edit, view_many, batch_edit)
 - **list_files**: Browse directory structures with pattern matching and content search
-- **html2md**: Convert HTML content to Markdown format
+- **read_html**: Convert HTML content to Markdown format
 
 ### Agent Tools Reference
 
@@ -503,7 +503,7 @@ enable_layers = false
 [docs-writer.mcp]
 enabled = true
 server_refs = ["filesystem"]
-allowed_tools = ["text_editor", "html2md"]  # Only doc-related tools
+allowed_tools = ["text_editor", "read_html"]  # Only doc-related tools
 ```
 
 ### External Tool Integration

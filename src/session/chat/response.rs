@@ -92,29 +92,55 @@ pub async fn get_tool_server_name_async(tool_name: &str, config: &Config) -> Str
 	}
 }
 
-// Display execution intent (before execution)
+// Display execution intent with headers upfront (before execution)
 async fn display_tool_parameters_only(config: &Config, tool_calls: &[crate::mcp::McpToolCall]) {
 	if !tool_calls.is_empty() {
 		// Always log debug info if debug enabled
 		log_debug!("Found {} tool calls in response", tool_calls.len());
 
-		// Show execution intent for all log levels
-		let tool_names: Vec<String> = tool_calls
-			.iter()
-			.map(|call| call.tool_name.clone())
-			.collect();
-		println!(
-			"{}",
-			format!("Executing tools: {}", tool_names.join(", ")).bright_black()
-		);
+		let is_single_tool = tool_calls.len() == 1;
 
-		// Show detailed parameters only in debug mode
-		if config.get_log_level().is_debug_enabled() {
-			for call in tool_calls.iter() {
-				println!("\nTool: {}", call.tool_name.bright_cyan());
+		// Show headers upfront - with indices for multiple tools, without for single tool
+		for (index, call) in tool_calls.iter().enumerate() {
+			let tool_index = index + 1;
+
+			// Get server name using same logic as execution
+			let server_name = get_tool_server_name_async(&call.tool_name, config).await;
+
+			// Create formatted header - with or without index based on tool count
+			let title = if is_single_tool {
+				format!(
+					" {} | {} ",
+					call.tool_name.bright_cyan(),
+					server_name.bright_blue()
+				)
+			} else {
+				format!(
+					" [{}] {} | {} ",
+					tool_index,
+					call.tool_name.bright_cyan(),
+					server_name.bright_blue()
+				)
+			};
+			let separator_length = 70.max(title.len() + 4);
+			let dashes = "─".repeat(separator_length - title.len());
+			let separator = format!("──{}{}──", title, dashes.dimmed());
+			println!("{}", separator);
+
+			// Show parameters based on log level
+			if config.get_log_level().is_debug_enabled() || config.get_log_level().is_info_enabled()
+			{
 				display_tool_parameters_full(call, config);
 			}
+
+			// Add spacing between tools (except for the last one)
+			if index < tool_calls.len() - 1 {
+				println!();
+			}
 		}
+
+		// Add final spacing before execution starts
+		println!();
 	}
 }
 

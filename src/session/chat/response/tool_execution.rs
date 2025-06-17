@@ -168,8 +168,9 @@ async fn execute_tools_parallel_internal(
 	operation_cancelled: Arc<AtomicBool>,
 ) -> Result<(Vec<crate::mcp::McpToolResult>, u64)> {
 	let mut tool_tasks = Vec::new();
+	let is_single_tool = current_tool_calls.len() == 1;
 
-	for tool_call in current_tool_calls.clone() {
+	for (index, tool_call) in current_tool_calls.clone().iter().enumerate() {
 		// Increment tool call counter
 		context.increment_tool_calls();
 
@@ -179,6 +180,7 @@ async fn execute_tools_parallel_internal(
 
 		// Clone tool_name separately for tool task tracking
 		let tool_name = tool_call.tool_name.clone();
+		let tool_index = index + 1; // 1-based index for display
 
 		// Execute in a tokio task
 		let config_clone = config.clone();
@@ -227,7 +229,7 @@ async fn execute_tools_parallel_internal(
 			}
 		};
 
-		tool_tasks.push((tool_name, task, original_tool_id));
+		tool_tasks.push((tool_name, task, original_tool_id, tool_index));
 	}
 
 	// FIXED: Proper parallel awaiting with immediate cancellation support
@@ -236,19 +238,21 @@ async fn execute_tools_parallel_internal(
 	let mut total_tool_time_ms = 0; // Track cumulative tool execution time
 
 	// Extract task info for later use
-	let task_info: Vec<(String, String)> = tool_tasks
+	let task_info: Vec<(String, String, usize)> = tool_tasks
 		.iter()
-		.map(|(tool_name, _, tool_id)| (tool_name.clone(), tool_id.clone()))
+		.map(|(tool_name, _, tool_id, tool_index)| {
+			(tool_name.clone(), tool_id.clone(), *tool_index)
+		})
 		.collect();
 
 	// Extract just the tasks for parallel execution
-	let tasks: Vec<_> = tool_tasks.into_iter().map(|(_, task, _)| task).collect();
+	let tasks: Vec<_> = tool_tasks.into_iter().map(|(_, task, _, _)| task).collect();
 
 	// Use tokio::select! for immediate cancellation response
 	tokio::select! {
 		task_results = futures::future::join_all(tasks) => {
 			// All tasks completed before cancellation
-			for ((tool_name, tool_id), task_result) in task_info.into_iter().zip(task_results) {
+			for ((tool_name, tool_id, tool_index), task_result) in task_info.into_iter().zip(task_results) {
 				// Store tool call info for consolidated display after execution
 				let tool_call_info = current_tool_calls
 					.iter()
@@ -271,14 +275,19 @@ async fn execute_tools_parallel_internal(
 					}
 
 					// Display the complete tool execution with consolidated info
+					let display_params = ToolDisplayParams {
+						stored_tool_call: &stored_tool_call,
+						tool_name: &tool_name,
+						tool_id: &tool_id,
+						tool_index,
+						is_single_tool,
+					};
 					display_tool_success(
-						&stored_tool_call,
+						display_params,
 						&res,
-						&tool_name,
 						tool_time_ms,
 						config,
 						context.session_name(),
-						&tool_id,
 					)
 					.await;
 
@@ -296,7 +305,7 @@ async fn execute_tools_parallel_internal(
 					}
 
 					// Display error in consolidated format for other errors
-					display_tool_error(&stored_tool_call, &tool_name, &e);
+					display_tool_error(&stored_tool_call, &tool_name, &e, tool_index, is_single_tool);
 
 					// Track errors for this tool (if error tracking is available)
 					let loop_detected = if let Some(error_tracker) = context.error_tracker() {
@@ -372,7 +381,7 @@ async fn execute_tools_parallel_internal(
 				}
 
 				// Display task error in consolidated format for other errors
-				display_tool_error(&stored_tool_call, &tool_name, &anyhow::anyhow!("{}", e));
+				display_tool_error(&stored_tool_call, &tool_name, &anyhow::anyhow!("{}", e), tool_index, is_single_tool);
 
 				// Show task error status
 				println!("✗ Task error for '{}': {}", tool_name, e);
@@ -408,7 +417,7 @@ async fn execute_tools_parallel_internal(
 			);
 
 			// Show cancellation message for each tool
-			for (tool_name, _) in task_info {
+			for (tool_name, _, _) in task_info {
 				println!(
 					"{}",
 					format!("🛑 Tool '{}' cancelled - server preserved", tool_name).bright_yellow()
@@ -423,18 +432,34 @@ async fn execute_tools_parallel_internal(
 	Ok((tool_results, total_tool_time_ms))
 }
 
+// Parameters for tool display functions
+struct ToolDisplayParams<'a> {
+	stored_tool_call: &'a Option<crate::mcp::McpToolCall>,
+	tool_name: &'a str,
+	tool_id: &'a str,
+	tool_index: usize,
+	is_single_tool: bool,
+}
+
 // Display successful tool execution (after execution - header + results)
 async fn display_tool_success(
-	stored_tool_call: &Option<crate::mcp::McpToolCall>,
+	params: ToolDisplayParams<'_>,
 	res: &crate::mcp::McpToolResult,
-	tool_name: &str,
 	tool_time_ms: u64,
 	config: &Config,
 	session_name: &str,
-	tool_id: &str,
 ) {
-	// Display proper tool header with parameters for each parallel tool execution result
-	display_individual_tool_header_with_params(tool_name, stored_tool_call, config).await;
+	// For multiple tools: show header again with index
+	// For single tool: skip header (already shown upfront)
+	if !params.is_single_tool {
+		display_individual_tool_header_with_params(
+			params.tool_name,
+			params.stored_tool_call,
+			config,
+			params.tool_index,
+		)
+		.await;
+	}
 
 	// Show the actual tool output based on log level using MCP protocol
 	if config.get_log_level().is_info_enabled() || config.get_log_level().is_debug_enabled() {
@@ -454,12 +479,19 @@ async fn display_tool_success(
 	// None mode: No output shown (as requested)
 
 	// Always show completion status with timing
-	println!("✓ Tool '{}' completed in {}ms", tool_name, tool_time_ms);
+	println!(
+		"✓ Tool '{}' completed in {}ms",
+		params.tool_name, tool_time_ms
+	);
 	println!("──────────────────");
 
 	// Log the tool response with session name and timing
-	let _ =
-		crate::session::logger::log_tool_result(session_name, tool_id, &res.result, tool_time_ms);
+	let _ = crate::session::logger::log_tool_result(
+		session_name,
+		params.tool_id,
+		&res.result,
+		tool_time_ms,
+	);
 }
 
 /// Display individual tool header with parameters (for parallel execution results)
@@ -467,6 +499,7 @@ async fn display_individual_tool_header_with_params(
 	tool_name: &str,
 	stored_tool_call: &Option<crate::mcp::McpToolCall>,
 	config: &Config,
+	tool_index: usize,
 ) {
 	use colored::Colorize;
 
@@ -474,9 +507,10 @@ async fn display_individual_tool_header_with_params(
 	let server_name =
 		crate::session::chat::response::get_tool_server_name_async(tool_name, config).await;
 
-	// Create formatted header matching the original style
+	// Create formatted header matching the original style with index
 	let title = format!(
-		" {} | {} ",
+		" [{}] {} | {} ",
+		tool_index,
 		tool_name.bright_cyan(),
 		server_name.bright_blue()
 	);
@@ -519,20 +553,25 @@ fn display_tool_error(
 	stored_tool_call: &Option<crate::mcp::McpToolCall>,
 	tool_name: &str,
 	error: &anyhow::Error,
+	tool_index: usize,
+	is_single_tool: bool,
 ) {
-	if let Some(tool_call) = stored_tool_call {
-		let category = crate::mcp::guess_tool_category(&tool_call.tool_name);
-		let title = format!(
-			" {} | {} ",
-			tool_call.tool_name.bright_cyan(),
-			category.bright_blue()
-		);
-		let separator_length = 70.max(title.len() + 4);
-		let dashes = "─".repeat(separator_length - title.len());
-		let separator = format!("──{}{}──", title, dashes.dimmed());
-		println!("{}", separator);
-
-		// Show error without parameters (since header already shown before execution)
+	// For multiple tools: show header again with index
+	// For single tool: skip header (already shown upfront)
+	if !is_single_tool {
+		if let Some(tool_call) = stored_tool_call {
+			let category = crate::mcp::guess_tool_category(&tool_call.tool_name);
+			let title = format!(
+				" [{}] {} | {} ",
+				tool_index,
+				tool_call.tool_name.bright_cyan(),
+				category.bright_blue()
+			);
+			let separator_length = 70.max(title.len() + 4);
+			let dashes = "─".repeat(separator_length - title.len());
+			let separator = format!("──{}{}──", title, dashes.dimmed());
+			println!("{}", separator);
+		}
 	}
 
 	// Show error status

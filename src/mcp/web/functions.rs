@@ -15,7 +15,10 @@
 // Function definitions for the Web MCP provider
 
 use super::super::McpFunction;
-use super::search::get_web_search_function;
+use super::search::{
+	get_image_search_function, get_news_search_function, get_video_search_function,
+	get_web_search_function,
+};
 use serde_json::json;
 
 pub fn get_read_html_function() -> McpFunction {
@@ -67,5 +70,11 @@ pub fn get_read_html_function() -> McpFunction {
 
 // Get all available web functions
 pub fn get_all_functions() -> Vec<McpFunction> {
-	vec![get_web_search_function(), get_read_html_function()]
+	vec![
+		get_web_search_function(),
+		get_image_search_function(),
+		get_video_search_function(),
+		get_news_search_function(),
+		get_read_html_function(),
+	]
 }

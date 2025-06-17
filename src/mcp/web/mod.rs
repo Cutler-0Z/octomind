@@ -22,7 +22,9 @@ pub mod html_converter;
 pub mod search;
 
 pub use functions::get_all_functions;
-pub use search::execute_web_search;
+pub use search::{
+	execute_image_search, execute_news_search, execute_video_search, execute_web_search,
+};
 
 // Execute HTML to Markdown conversion with cancellation support
 pub async fn execute_read_html(

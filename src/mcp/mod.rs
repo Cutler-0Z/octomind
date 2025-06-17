@@ -696,6 +696,36 @@ async fn try_execute_tool_call(
 							result.tool_id = call.tool_id.clone();
 							return Ok(result);
 						}
+						"image_search" => {
+							crate::log_debug!(
+								"Executing image_search via web server '{}'",
+								target_server.name
+							);
+							let mut result =
+								web::execute_image_search(call, cancellation_token.clone()).await?;
+							result.tool_id = call.tool_id.clone();
+							return Ok(result);
+						}
+						"video_search" => {
+							crate::log_debug!(
+								"Executing video_search via web server '{}'",
+								target_server.name
+							);
+							let mut result =
+								web::execute_video_search(call, cancellation_token.clone()).await?;
+							result.tool_id = call.tool_id.clone();
+							return Ok(result);
+						}
+						"news_search" => {
+							crate::log_debug!(
+								"Executing news_search via web server '{}'",
+								target_server.name
+							);
+							let mut result =
+								web::execute_news_search(call, cancellation_token.clone()).await?;
+							result.tool_id = call.tool_id.clone();
+							return Ok(result);
+						}
 						"read_html" => {
 							crate::log_debug!(
 								"Executing read_html via web server '{}'",

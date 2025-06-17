@@ -108,7 +108,7 @@ Always use `provider:model` format:
 **SPECIFIC SERVERS:**
 - **Developer tools**: `src/mcp/dev/` (shell, code analysis)
 - **Filesystem tools**: `src/mcp/fs/` (text_editor, list_files)
-- **Web tools**: `src/mcp/web/` (web_search, read_html)
+- **Web tools**: `src/mcp/web/` (web_search, image_search, video_search, news_search, read_html)
 - **Agent tools**: `src/mcp/agent/` (task routing to AI layers)
 
 **TOOL ISSUES:**

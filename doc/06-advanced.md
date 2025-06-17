@@ -23,7 +23,127 @@ MCP enables AI models to use external tools and services through a standardized 
 
 #### Web Tools (type: "builtin")
 - **web_search**: Search the web using Brave Search API with configurable parameters
+- **image_search**: Search for images using Brave Search API with metadata and thumbnails
+- **video_search**: Search for videos using Brave Search API with duration, views, and creator info
+- **news_search**: Search for news articles using Brave Search API with publication dates and breaking news flags
 - **read_html**: Convert HTML content to Markdown format from URLs or local files
+
+#### Web Search Tools Configuration
+
+All web search tools require the `BRAVE_API_KEY` environment variable to be set with your Brave Search API key.
+
+**Setup:**
+```bash
+export BRAVE_API_KEY="your_brave_api_key_here"
+```
+
+**Web Search (`web_search`)**
+Search the web with comprehensive filtering options:
+
+```json
+{
+  "query": "rust web framework",
+  "count": 10,
+  "country": "US",
+  "search_lang": "en",
+  "ui_lang": "en-US",
+  "safesearch": "moderate",
+  "freshness": "pw"
+}
+```
+
+Parameters:
+- `query` (required): Search query (max 400 chars, 50 words)
+- `count`: Results to return (1-20, default: 20)
+- `offset`: Results to skip for pagination (0-9, default: 0)
+- `country`: Country code (e.g., "US", "GB", "DE")
+- `search_lang`: Language code (e.g., "en", "es", "fr")
+- `ui_lang`: UI language (e.g., "en-US", "es-ES")
+- `safesearch`: "strict", "moderate", or "off"
+- `freshness`: "pd" (day), "pw" (week), "pm" (month), "py" (year)
+
+**Image Search (`image_search`)**
+Find images with metadata and thumbnails:
+
+```json
+{
+  "query": "golden retriever puppy",
+  "count": 20,
+  "country": "US",
+  "search_lang": "en",
+  "safesearch": "strict"
+}
+```
+
+Parameters:
+- `query` (required): Image search query
+- `count`: Results to return (1-100, default: 50)
+- `country`: Country code for localized results
+- `search_lang`: Language for search results
+- `safesearch`: "strict" or "off" (default: "strict")
+- `spellcheck`: Enable spellcheck (default: true)
+
+**Video Search (`video_search`)**
+Search for videos with duration, views, and creator information:
+
+```json
+{
+  "query": "rust programming tutorial",
+  "count": 15,
+  "offset": 0,
+  "country": "US",
+  "search_lang": "en",
+  "ui_lang": "en-US",
+  "safesearch": "moderate",
+  "freshness": "pm"
+}
+```
+
+Parameters:
+- `query` (required): Video search query
+- `count`: Results to return (1-50, default: 20)
+- `offset`: Results to skip for pagination (0-9, default: 0)
+- `country`: Country code for localized results
+- `search_lang`: Language for search results
+- `ui_lang`: UI language preference
+- `safesearch`: "strict", "moderate", or "off"
+- `freshness`: Time filter for recent videos
+- `spellcheck`: Enable spellcheck (default: true)
+
+**News Search (`news_search`)**
+Find news articles with publication dates and breaking news flags:
+
+```json
+{
+  "query": "artificial intelligence breakthrough",
+  "count": 10,
+  "country": "US",
+  "search_lang": "en",
+  "freshness": "pd",
+  "extra_snippets": true
+}
+```
+
+Parameters:
+- `query` (required): News search query
+- `count`: Results to return (1-50, default: 20)
+- `offset`: Results to skip for pagination (0-9, default: 0)
+- `country`: Country code for localized results
+- `search_lang`: Language for search results
+- `ui_lang`: UI language preference
+- `safesearch`: "strict", "moderate", or "off"
+- `freshness`: Time filter for recent news
+- `spellcheck`: Enable spellcheck (default: true)
+- `extra_snippets`: Get additional excerpts (default: false)
+
+**Best Practices:**
+- Use specific, targeted queries for better results
+- Use quotes for exact phrase matching: `"machine learning"`
+- Use site: operator for specific domains: `site:github.com`
+- Use - operator to exclude terms: `python -django`
+- For images: Use descriptive visual terms
+- For videos: Include keywords like "tutorial", "review", "how to"
+- For news: Include current event keywords and locations
 
 ### Agent Tools Reference
 

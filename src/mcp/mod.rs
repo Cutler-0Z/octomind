@@ -35,6 +35,7 @@ pub mod fs;
 pub mod health_monitor;
 pub mod process;
 pub mod server;
+pub mod web;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolCall {
@@ -350,6 +351,13 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 						};
 						functions.extend(filtered_functions);
 					}
+					"web" => {
+						let server_functions =
+							get_cached_internal_functions("web", &server.tools, || {
+								web::get_all_functions()
+							});
+						functions.extend(server_functions);
+					}
 					_ => {
 						// Unknown builtin server
 						crate::log_debug!("Unknown builtin server: {}", server.name);
@@ -524,6 +532,9 @@ pub async fn build_tool_server_map(
 								.collect()
 						}
 					}
+					"web" => get_cached_internal_functions("web", &server.tools, || {
+						web::get_all_functions()
+					}),
 					_ => {
 						crate::log_debug!("Unknown builtin server: {}", server.name);
 						Vec::new()
@@ -684,6 +695,24 @@ async fn try_execute_tool_call(
 							));
 						}
 					}
+					"web" => match call.tool_name.as_str() {
+						"web_search" => {
+							crate::log_debug!(
+								"Executing web_search via web server '{}'",
+								target_server.name
+							);
+							let mut result =
+								web::execute_web_search(call, cancellation_token.clone()).await?;
+							result.tool_id = call.tool_id.clone();
+							return Ok(result);
+						}
+						_ => {
+							return Err(anyhow::anyhow!(
+								"Tool '{}' not implemented in web server",
+								call.tool_name
+							));
+						}
+					},
 					_ => {
 						return Err(anyhow::anyhow!(
 							"Unknown builtin server: {}",

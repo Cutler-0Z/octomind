@@ -88,7 +88,7 @@ system = """You are an Octomind – top notch fully autonomous AI developer...""
 
 # MCP configuration for developer role
 [developer.mcp]
-server_refs = ["developer", "filesystem", "octocode"]
+server_refs = ["developer", "filesystem", "web", "octocode"]
 allowed_tools = []
 
 # Assistant role - optimized for general assistance
@@ -125,6 +125,13 @@ args = []
 tools = []
 
 [[mcp.servers]]
+name = "web"
+type = "builtin"
+timeout_seconds = 30
+args = []
+tools = []
+
+[[mcp.servers]]
 name = "octocode"
 type = "stdin"
 command = "octocode"
@@ -145,7 +152,7 @@ tools = []
 - **API Keys**: Set via environment variables only (e.g., `OPENROUTER_API_KEY`)
 - **Server References**: Roles use `server_refs` to reference servers by name
 - **Tool Filtering**: Use `allowed_tools` to limit available tools per role
-- **Builtin Servers**: Developer, filesystem, and octocode are always available
+- **Builtin Servers**: Developer, filesystem, web, and octocode are always available
 
 ## Custom Instructions File
 
@@ -329,6 +336,11 @@ enabled = true
 name = "filesystem"
 type = "builtin"
 
+[[mcp.servers]]
+enabled = true
+name = "web"
+type = "builtin"
+
 # Developer role (inherits global MCP automatically)
 [developer]
 model = "openrouter:anthropic/claude-sonnet-4"
@@ -399,7 +411,7 @@ output_mode = "replace"  # Replaces input with context
 builtin = true
 
 [layers.mcp]
-server_refs = ["developer", "filesystem", "octocode"]
+server_refs = ["developer", "filesystem", "web", "octocode"]
 allowed_tools = ["search_code", "view_signatures", "list_files"]
 
 [[layers]]
@@ -507,6 +519,7 @@ server_refs = ["developer", "filesystem"]  # Default servers
 
 - **developer**: Built-in developer tools (shell, code search, file operations)
 - **filesystem**: Built-in filesystem tools (file reading, writing, listing)
+- **web**: Built-in web tools (web search, HTML conversion)
 - **external**: External MCP servers (HTTP or command-based)
 
 ### Migration from Legacy Configuration
@@ -553,10 +566,17 @@ timeout_seconds = 30
 args = []
 tools = []
 
+[[mcp.servers]]
+name = "web"
+type = "builtin"
+timeout_seconds = 30
+args = []
+tools = []
+
 # Reference from roles
 [developer.mcp]
 enabled = true
-server_refs = ["developer", "filesystem"]
+server_refs = ["developer", "filesystem", "web"]
 ```
 
 **Migration benefits:**

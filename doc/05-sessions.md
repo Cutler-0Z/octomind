@@ -653,7 +653,7 @@ output_mode = "replace"  # Replaces input with context
 builtin = true
 
 [layers.mcp]
-server_refs = ["developer", "filesystem"]
+server_refs = ["developer", "filesystem", "web"]
 allowed_tools = ["search_code", "view_signatures", "list_files"]
 
 [[layers]]

@@ -20,7 +20,10 @@ MCP enables AI models to use external tools and services through a standardized 
 #### Filesystem Tools (type: "builtin")
 - **text_editor**: Read, write, edit files with multiple operations (view, create, str_replace, insert, line_replace, undo_edit, view_many, batch_edit)
 - **list_files**: Browse directory structures with pattern matching and content search
-- **read_html**: Convert HTML content to Markdown format
+
+#### Web Tools (type: "builtin")
+- **web_search**: Search the web using Brave Search API with configurable parameters
+- **read_html**: Convert HTML content to Markdown format from URLs or local files
 
 ### Agent Tools Reference
 
@@ -244,6 +247,13 @@ timeout_seconds = 30
 args = []
 tools = []  # Empty means all tools enabled
 
+[[mcp.servers]]
+name = "web"
+type = "builtin"
+timeout_seconds = 30
+args = []
+tools = []  # Empty means all tools enabled
+
 # External HTTP server example
 [[mcp.servers]]
 name = "web_search"
@@ -270,7 +280,7 @@ Roles reference servers from the main MCP configuration and can limit tool acces
 ```toml
 # Developer role with full access
 [developer.mcp]
-server_refs = ["developer", "filesystem"]
+server_refs = ["developer", "filesystem", "web"]
 allowed_tools = []  # Empty means all tools from referenced servers
 
 # Assistant role with limited access
@@ -288,6 +298,7 @@ allowed_tools = ["text_editor", "shell"]
 
 - **developer**: Built-in development tools (shell commands, code analysis)
 - **filesystem**: Built-in file operations (reading, writing, editing files)
+- **web**: Built-in web tools (web search, HTML conversion)
 - **external**: External MCP servers (HTTP or command-based)
 
 ### External MCP Servers

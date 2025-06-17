@@ -6,7 +6,8 @@ This guide explains how to add new built-in MCP servers to Octomind. Use this wh
 
 Octomind has several built-in MCP servers:
 - **developer**: Shell commands, development tools
-- **filesystem**: File operations, directory listing, HTML conversion
+- **filesystem**: File operations, directory listing
+- **web**: Web search, HTML conversion
 - **agent**: Task routing to AI layers
 
 Each server provides a specific category of tools and can be enabled/disabled independently in role configurations.

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.4.0] - 2025-06-17
+
+### 📋 Release Summary
+
+This release introduces new web search tools, including image, video, and news search, along with Brave Search integration and a built-in web server for enhanced functionality. User experience is improved with support for input from stdin, streamlined single-task session handling, and clearer messaging during layered processing. Several bug fixes enhance session stability, output handling, and recursive tool usage.
+
+
+### ✨ Features
+
+- **config**: add allowed tools filtering from config patterns (0a2add63)
+- **web**: add image, video, and news search tools with docs (a98a9abc)
+- **config**: add builtin web server with web tools support (662a4dc6)
+- **websearch**: add Brave Search integration and web MCP server (a6541e4d)
+- **run**: support input from stdin if no parameter provided (46d36043)
+- **session**: add user message for automatic layered processing (b5760314)
+- **run**: add run command for single-task session handling (0fc4894e)
+
+### 🐛 Bug Fixes
+
+- **session**: disable animation in non-interactive run sessions (864d4206)
+- **session**: handle multiple outputs correctly in layered processing (dd5eff99)
+- **session**: prevent duplicate user message addition in layered resp... (50b1fc6f)
+- **session/layers**: enable recursive tool calls in layers using unif... (256498bf)
+
+### 🔧 Other Changes
+
+- **instructions**: add detailed guidance on where to look first (92fa9661)
+- **web-mcp**: move html2md functionality into read_html tool (94b798a7)
+
+### 📊 Commit Summary
+
+**Total commits**: 13
+- ✨ 7 new features
+- 🐛 4 bug fixes
+- 🔧 2 other changes
+
 ## [0.3.0] - 2025-06-16
 
 ### 📋 Release Summary

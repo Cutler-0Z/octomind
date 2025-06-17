@@ -103,7 +103,10 @@ async fn display_tool_parameters_only(config: &Config, tool_calls: &[crate::mcp:
 			.iter()
 			.map(|call| call.tool_name.clone())
 			.collect();
-		println!("{}", format!("Executing tools: {}", tool_names.join(", ")).bright_black());
+		println!(
+			"{}",
+			format!("Executing tools: {}", tool_names.join(", ")).bright_black()
+		);
 
 		// Show detailed parameters only in debug mode
 		if config.get_log_level().is_debug_enabled() {

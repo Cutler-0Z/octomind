@@ -230,40 +230,39 @@ async fn execute_tools_parallel_internal(
 		tool_tasks.push((tool_name, task, original_tool_id));
 	}
 
-	// Collect all results and display them cleanly with real-time cancellation feedback
+	// FIXED: Proper parallel awaiting with immediate cancellation support
 	let mut tool_results = Vec::new();
 	let mut _has_error = false;
 	let mut total_tool_time_ms = 0; // Track cumulative tool execution time
 
-	for (tool_name, task, tool_id) in tool_tasks {
-		// IMMEDIATE cancellation check - no delays, no grace periods
-		if operation_cancelled.load(Ordering::SeqCst) {
-			use colored::*;
-			println!(
-				"{}",
-				format!("🛑 Tool '{}' cancelled - server preserved", tool_name).bright_yellow()
-			);
+	// Extract task info for later use
+	let task_info: Vec<(String, String)> = tool_tasks
+		.iter()
+		.map(|(tool_name, _, tool_id)| (tool_name.clone(), tool_id.clone()))
+		.collect();
 
-			// CRITICAL: We only cancel the REQUEST, never the MCP server
-			// The cancellation token in the MCP communication layer handles this properly
-			// Skip to next tool immediately - no waiting, no task.abort()
-			continue;
-		}
+	// Extract just the tasks for parallel execution
+	let tasks: Vec<_> = tool_tasks.into_iter().map(|(_, task, _)| task).collect();
 
-		// Store tool call info for consolidated display after execution
-		let tool_call_info = current_tool_calls
-			.iter()
-			.find(|tc| tc.tool_id == tool_id)
-			.or_else(|| {
-				current_tool_calls
+	// Use tokio::select! for immediate cancellation response
+	tokio::select! {
+		task_results = futures::future::join_all(tasks) => {
+			// All tasks completed before cancellation
+			for ((tool_name, tool_id), task_result) in task_info.into_iter().zip(task_results) {
+				// Store tool call info for consolidated display after execution
+				let tool_call_info = current_tool_calls
 					.iter()
-					.find(|tc| tc.tool_name == tool_name)
-			});
+					.find(|tc| tc.tool_id == tool_id)
+					.or_else(|| {
+						current_tool_calls
+							.iter()
+							.find(|tc| tc.tool_name == tool_name)
+					});
 
-		// Store for display after execution
-		let stored_tool_call = tool_call_info.cloned();
+				// Store for display after execution
+				let stored_tool_call = tool_call_info.cloned();
 
-		match task.await {
+				match task_result {
 			Ok(result) => match result {
 				Ok((res, tool_time_ms)) => {
 					// Tool succeeded, reset the error counter (if available)
@@ -390,6 +389,34 @@ async fn execute_tools_parallel_internal(
 				};
 				tool_results.push(error_result);
 			}
+		}
+			}
+		},
+		_ = async {
+			loop {
+				if operation_cancelled.load(Ordering::SeqCst) {
+					break;
+				}
+				tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+			}
+		} => {
+			// Cancellation occurred - provide immediate feedback
+			use colored::*;
+			println!(
+				"{}",
+				"🛑 All tool execution cancelled - returning to input".bright_yellow()
+			);
+
+			// Show cancellation message for each tool
+			for (tool_name, _) in task_info {
+				println!(
+					"{}",
+					format!("🛑 Tool '{}' cancelled - server preserved", tool_name).bright_yellow()
+				);
+			}
+
+			// Return empty results for cancelled execution
+			return Ok((Vec::new(), total_tool_time_ms));
 		}
 	}
 

@@ -92,7 +92,9 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 							func.get("description").and_then(|d| d.as_str()),
 						) {
 							// Check if this tool is enabled
-							if server.tools.is_empty() || server.tools.contains(&name.to_string()) {
+							if server.tools.is_empty()
+								|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+							{
 								// Get the parameters from the inputSchema field if available
 								let parameters =
 									func.get("inputSchema").cloned().unwrap_or(json!({}));
@@ -115,7 +117,9 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 							func.get("description").and_then(|d| d.as_str()),
 						) {
 							// Check if this tool is enabled
-							if server.tools.is_empty() || server.tools.contains(&name.to_string()) {
+							if server.tools.is_empty()
+								|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+							{
 								// Get the parameters from the inputSchema field if available
 								let parameters =
 									func.get("inputSchema").cloned().unwrap_or(json!({}));

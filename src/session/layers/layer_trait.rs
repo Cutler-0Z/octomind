@@ -145,6 +145,82 @@ pub struct LayerMcpConfig {
 	pub allowed_tools: Vec<String>, // Specific tools allowed (empty = all tools from enabled servers)
 }
 
+impl LayerMcpConfig {
+	/// Check if a tool is allowed based on allowed_tools patterns
+	/// Supports:
+	/// - Exact tool names: "text_editor"
+	/// - Server group patterns: "filesystem:*" (all tools from filesystem server)
+	/// - Server-specific patterns: "filesystem:text_*" (filesystem tools starting with "text_")
+	pub fn is_tool_allowed(&self, tool_name: &str, server_name: &str) -> bool {
+		// If no allowed_tools specified, all tools are allowed
+		if self.allowed_tools.is_empty() {
+			return true;
+		}
+
+		for pattern in &self.allowed_tools {
+			// Check for server group pattern (e.g., "filesystem:*" or "filesystem:text_*")
+			if let Some((server_prefix, tool_pattern)) = pattern.split_once(':') {
+				// Check if server matches
+				if server_prefix == server_name {
+					// Check tool pattern
+					if tool_pattern == "*" {
+						// All tools from this server are allowed
+						return true;
+					} else if let Some(prefix) = tool_pattern.strip_suffix('*') {
+						// Prefix matching (e.g., "text_*")
+						if tool_name.starts_with(prefix) {
+							return true;
+						}
+					} else {
+						// Exact tool name within server namespace
+						if tool_name == tool_pattern {
+							return true;
+						}
+					}
+				}
+			} else {
+				// Exact tool name match (backward compatibility)
+				if tool_name == pattern {
+					return true;
+				}
+			}
+		}
+
+		false
+	}
+
+	/// Expand allowed_tools patterns into actual tool names for a specific server
+	/// This converts patterns like "filesystem:*" or "filesystem:text_*" into concrete tool lists
+	fn expand_patterns_for_server(&self, server_name: &str) -> Vec<String> {
+		let mut expanded_tools = Vec::new();
+
+		for pattern in &self.allowed_tools {
+			// Check for server group pattern (e.g., "filesystem:*" or "filesystem:text_*")
+			if let Some((server_prefix, tool_pattern)) = pattern.split_once(':') {
+				// Check if server matches
+				if server_prefix == server_name {
+					if tool_pattern == "*" {
+						// All tools from this server - return empty to indicate "all tools"
+						return Vec::new();
+					} else if tool_pattern.ends_with('*') {
+						// Prefix matching (e.g., "text_*") - we'll need to get actual tools and filter
+						// For now, store the pattern and let the existing filtering handle it
+						expanded_tools.push(tool_pattern.to_string());
+					} else {
+						// Exact tool name within server namespace
+						expanded_tools.push(tool_pattern.to_string());
+					}
+				}
+			} else {
+				// Exact tool name match (backward compatibility) - include for all servers
+				expanded_tools.push(pattern.clone());
+			}
+		}
+
+		expanded_tools
+	}
+}
+
 // Common configuration properties for all layers - extended for flexibility
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LayerConfig {
@@ -208,7 +284,8 @@ impl LayerConfig {
 					// Name is already set in the server config
 					// Apply layer-specific tool filtering if specified
 					if !self.mcp.allowed_tools.is_empty() {
-						server.tools = self.mcp.allowed_tools.clone();
+						// Convert patterns to actual tool names for this server
+						server.tools = self.mcp.expand_patterns_for_server(server_name);
 					}
 					layer_servers.push(server);
 				}

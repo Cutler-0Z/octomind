@@ -193,7 +193,8 @@ impl RoleMcpConfig {
 				let mut server = server_config.clone();
 				// Apply role-specific tool filtering if specified
 				if !self.allowed_tools.is_empty() {
-					server.tools = self.allowed_tools.clone();
+					// Convert patterns to actual tool names for this server
+					server.tools = self.expand_patterns_for_server(server_name);
 				}
 				result.push(server);
 			} else {
@@ -207,6 +208,37 @@ impl RoleMcpConfig {
 		}
 
 		result
+	}
+
+	/// Expand allowed_tools patterns into actual tool names for a specific server
+	/// This converts patterns like "filesystem:*" or "filesystem:text_*" into concrete tool lists
+	fn expand_patterns_for_server(&self, server_name: &str) -> Vec<String> {
+		let mut expanded_tools = Vec::new();
+
+		for pattern in &self.allowed_tools {
+			// Check for server group pattern (e.g., "filesystem:*" or "filesystem:text_*")
+			if let Some((server_prefix, tool_pattern)) = pattern.split_once(':') {
+				// Check if server matches
+				if server_prefix == server_name {
+					if tool_pattern == "*" {
+						// All tools from this server - return empty to indicate "all tools"
+						return Vec::new();
+					} else if tool_pattern.ends_with('*') {
+						// Prefix matching (e.g., "text_*") - we'll need to get actual tools and filter
+						// For now, store the pattern and let the existing filtering handle it
+						expanded_tools.push(tool_pattern.to_string());
+					} else {
+						// Exact tool name within server namespace
+						expanded_tools.push(tool_pattern.to_string());
+					}
+				}
+			} else {
+				// Exact tool name match (backward compatibility) - include for all servers
+				expanded_tools.push(pattern.clone());
+			}
+		}
+
+		expanded_tools
 	}
 }
 

@@ -74,6 +74,7 @@ Always use `provider:model` format:
 1. **Check memories first** - `remember("your search terms")` for past work and decisions
 2. **Examine config template** - `config-templates/default.toml` shows all available settings
 3. **Check documentation** - `doc/` directory for comprehensive guides
+4. **Use rg for exact lookups** - Never use semantic_search for function names or symbols
 
 ### 🛠️ WORKING WITH CONFIGURATION
 **FIRST LOOK:**
@@ -84,6 +85,7 @@ Always use `provider:model` format:
 **SPECIFIC ISSUES:**
 - **Role configuration**: `src/config/roles.rs` + template `[[roles]]` sections
 - **MCP server setup**: `src/config/mcp.rs` + template `[[mcp.servers]]` sections
+- **Tool filtering patterns**: `src/config/mcp.rs` → `expand_patterns_for_server()`
 - **Provider setup**: `src/config/providers.rs` + `src/session/providers/`
 - **Layer configuration**: `src/session/layers/` + template `[[layers]]` sections
 
@@ -115,6 +117,7 @@ Always use `provider:model` format:
 - **Tool routing**: `src/mcp/mod.rs` → `try_execute_tool_call()`
 - **Tool definitions**: `src/mcp/*/functions.rs` files
 - **Tool execution**: `src/mcp/*/core.rs` or individual tool files
+- **Tool filtering**: `src/mcp/mod.rs` → `filter_tools_by_patterns()` and pattern matching
 - **Server health**: `src/mcp/health_monitor.rs`
 
 ### 🤖 WORKING WITH AI PROVIDERS
@@ -152,8 +155,10 @@ Always use `provider:model` format:
 #### Tool Not Working
 1. `src/mcp/mod.rs` → `build_tool_server_map()` (tool routing)
 2. `src/mcp/mod.rs` → `try_execute_tool_call()` (execution)
-3. Specific tool server in `src/mcp/*/` directories
-4. Tool function definition in `src/mcp/*/functions.rs`
+3. `src/mcp/mod.rs` → `filter_tools_by_patterns()` (pattern filtering)
+4. Specific tool server in `src/mcp/*/` directories
+5. Tool function definition in `src/mcp/*/functions.rs`
+6. Check `allowed_tools` patterns in role/layer config
 
 #### Session Behavior Issues
 1. `src/session/chat/session/mod.rs` → main session loop
@@ -172,12 +177,6 @@ Always use `provider:model` format:
 2. `src/session/layers/mod.rs` → layer orchestration
 3. Layer configuration in `config-templates/default.toml`
 4. Input/output mode handling in layer execution
-
-### 🔍 SEARCH STRATEGIES
-- **Multi-term search**: `['config', 'loading', 'template']` for comprehensive results
-- **Single-term search**: Only for specific function/struct names
-- **GraphRAG**: For architectural questions about component relationships
-- **View signatures**: `view_signatures(['src/mcp/**/*.rs'])` for API overview
 
 ## 🚀 COMMON DEVELOPMENT TASKS
 
@@ -218,22 +217,6 @@ Always use `provider:model` format:
 2. **Token estimation**: `src/session/mod.rs` → `estimate_tokens()`
 3. **Large response handling**: `src/mcp/mod.rs` → `handle_large_response()`
 4. **Cache management**: `src/session/cache/` directory
-
-## 🔧 RECENT MAJOR CHANGES
-
-### Web Server Introduction (Latest)
-- **New MCP Server**: Added `web` server for web-related tools
-- **Tool Migration**: Moved `read_html` (formerly `html2md`) from filesystem to web server
-- **Tool Addition**: Added `web_search` tool using Brave Search API
-- **Configuration**: Web server included in developer role by default
-- **Documentation**: Updated all docs to reflect new server architecture
-
-### Previous Changes
-- **Configurable Instructions**: Added `custom_instructions_file_name` setting
-- **Strict Config System**: Removed all code defaults, template-based approach
-- **Enhanced Tool Routing**: Automatic server type detection
-- **Layered Processing**: Query processor → Context generator → Developer
-- **Session Optimization**: Enhanced context management and reporting
 
 ## 📋 QUICK REFERENCE
 

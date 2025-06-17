@@ -896,7 +896,9 @@ pub async fn get_stdin_server_functions(server: &McpServerConfig) -> Result<Vec<
 					tool.get("description").and_then(|d| d.as_str()),
 				) {
 					// Check if this tool is enabled
-					if server.tools.is_empty() || server.tools.contains(&name.to_string()) {
+					if server.tools.is_empty()
+						|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+					{
 						// Get parameters from inputSchema if available, otherwise use empty object
 						let parameters = tool.get("inputSchema").cloned().unwrap_or(json!({}));
 

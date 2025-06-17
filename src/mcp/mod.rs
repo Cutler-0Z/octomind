@@ -341,14 +341,8 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 						// For agent server, get all agent functions based on config
 						// Don't cache agent functions since they depend on config
 						let server_functions = agent::get_all_functions(config);
-						let filtered_functions = if server.tools.is_empty() {
-							server_functions
-						} else {
-							server_functions
-								.into_iter()
-								.filter(|f| server.tools.contains(&f.name))
-								.collect()
-						};
+						let filtered_functions =
+							filter_tools_by_patterns(server_functions, &server.tools);
 						functions.extend(filtered_functions);
 					}
 					"web" => {
@@ -369,16 +363,8 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 				// This avoids spawning servers during system prompt creation
 				match server::get_server_functions_cached(&server).await {
 					Ok(server_functions) => {
-						let filtered_functions = if server.tools.is_empty() {
-							// No tool filtering - get all functions from server
-							server_functions
-						} else {
-							// Filter functions based on allowed tools
-							server_functions
-								.into_iter()
-								.filter(|func| server.tools.contains(&func.name))
-								.collect()
-						};
+						let filtered_functions =
+							filter_tools_by_patterns(server_functions, &server.tools);
 						functions.extend(filtered_functions);
 					}
 					Err(e) => {
@@ -395,6 +381,42 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 	}
 
 	functions
+}
+
+// Helper function to filter tools based on patterns
+fn filter_tools_by_patterns(tools: Vec<McpFunction>, allowed_tools: &[String]) -> Vec<McpFunction> {
+	if allowed_tools.is_empty() {
+		tools
+	} else {
+		tools
+			.into_iter()
+			.filter(|func| is_tool_allowed_by_patterns(&func.name, allowed_tools))
+			.collect()
+	}
+}
+
+// Helper function to check if a tool matches allowed patterns
+pub fn is_tool_allowed_by_patterns(tool_name: &str, allowed_tools: &[String]) -> bool {
+	if allowed_tools.is_empty() {
+		return true;
+	}
+
+	for pattern in allowed_tools {
+		// Handle wildcard patterns
+		if pattern.ends_with('*') {
+			let prefix = &pattern[..pattern.len() - 1];
+			if tool_name.starts_with(prefix) {
+				return true;
+			}
+		} else {
+			// Exact match
+			if tool_name == pattern {
+				return true;
+			}
+		}
+	}
+
+	false
 }
 
 // Helper function to get cached internal functions with filtering
@@ -428,7 +450,7 @@ where
 	} else {
 		all_functions
 			.into_iter()
-			.filter(|func| allowed_tools.contains(&func.name))
+			.filter(|func| is_tool_allowed_by_patterns(&func.name, allowed_tools))
 			.collect()
 	};
 
@@ -523,14 +545,7 @@ pub async fn build_tool_server_map(
 						// For agent server, get all agent functions based on config
 						// Don't cache agent functions since they depend on config
 						let server_functions = agent::get_all_functions(config);
-						if server.tools.is_empty() {
-							server_functions
-						} else {
-							server_functions
-								.into_iter()
-								.filter(|f| server.tools.contains(&f.name))
-								.collect()
-						}
+						filter_tools_by_patterns(server_functions, &server.tools)
 					}
 					"web" => get_cached_internal_functions("web", &server.tools, || {
 						web::get_all_functions()
@@ -544,16 +559,7 @@ pub async fn build_tool_server_map(
 			McpConnectionType::Http | McpConnectionType::Stdin => {
 				// For external servers, get their actual functions
 				match server::get_server_functions_cached(&server).await {
-					Ok(functions) => {
-						if server.tools.is_empty() {
-							functions // All functions allowed
-						} else {
-							functions
-								.into_iter()
-								.filter(|func| server.tools.contains(&func.name))
-								.collect()
-						}
-					}
+					Ok(functions) => filter_tools_by_patterns(functions, &server.tools),
 					Err(_) => Vec::new(), // Server not available, skip
 				}
 			}

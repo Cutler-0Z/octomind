@@ -92,39 +92,31 @@ pub async fn get_tool_server_name_async(tool_name: &str, config: &Config) -> Str
 	}
 }
 
-// Display tool headers and parameters for all log levels (before execution)
-async fn display_tool_headers(config: &Config, tool_calls: &[crate::mcp::McpToolCall]) {
+// Display execution intent (before execution)
+async fn display_tool_parameters_only(config: &Config, tool_calls: &[crate::mcp::McpToolCall]) {
 	if !tool_calls.is_empty() {
 		// Always log debug info if debug enabled
 		log_debug!("Found {} tool calls in response", tool_calls.len());
 
-		// Display headers and parameters for ALL modes
-		for call in tool_calls.iter() {
-			// Always show the header - use async version for accurate server lookup
-			let server_name = get_tool_server_name_async(&call.tool_name, config).await;
-			let title = format!(
-				" {} | {} ",
-				call.tool_name.bright_cyan(),
-				server_name.bright_blue()
-			);
-			let separator_length = 70.max(title.len() + 4);
-			let dashes = "─".repeat(separator_length - title.len());
-			let separator = format!("──{}{}──", title, dashes.dimmed());
-			println!("{}", separator);
+		// Show execution intent for all log levels
+		let tool_names: Vec<String> = tool_calls
+			.iter()
+			.map(|call| call.tool_name.clone())
+			.collect();
+		println!("{}", format!("Executing tools: {}", tool_names.join(", ")).bright_black());
 
-			// Show parameters based on log level
-			if config.get_log_level().is_info_enabled() || config.get_log_level().is_debug_enabled()
-			{
-				// Info/Debug mode: Show full parameters
+		// Show detailed parameters only in debug mode
+		if config.get_log_level().is_debug_enabled() {
+			for call in tool_calls.iter() {
+				println!("\nTool: {}", call.tool_name.bright_cyan());
 				display_tool_parameters_full(call, config);
 			}
-			// None mode: No parameters shown
 		}
 	}
 }
 
 // Display tool parameters in full detail (for info/debug modes)
-fn display_tool_parameters_full(tool_call: &crate::mcp::McpToolCall, config: &Config) {
+pub fn display_tool_parameters_full(tool_call: &crate::mcp::McpToolCall, config: &Config) {
 	if let Ok(params_obj) = serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(
 		tool_call.parameters.clone(),
 	) {
@@ -390,8 +382,8 @@ pub async fn process_response(
 				let clean_content = remove_function_calls(&current_content);
 				print_assistant_response(&clean_content, config, role);
 
-				// Display tool headers and parameters for all modes (after AI response)
-				display_tool_headers(config, &current_tool_calls).await;
+				// Display tool parameters upfront (headers will be shown per-tool during execution)
+				display_tool_parameters_only(config, &current_tool_calls).await;
 
 				// Early exit if cancellation was requested
 				if operation_cancelled.load(Ordering::SeqCst) {

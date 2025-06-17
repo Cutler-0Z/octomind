@@ -280,7 +280,8 @@ async fn execute_tools_parallel_internal(
 						config,
 						context.session_name(),
 						&tool_id,
-					);
+					)
+					.await;
 
 					tool_results.push(res);
 					// Accumulate tool execution time
@@ -395,9 +396,9 @@ async fn execute_tools_parallel_internal(
 	Ok((tool_results, total_tool_time_ms))
 }
 
-// Display successful tool execution (after execution - no header, output based on log level)
-fn display_tool_success(
-	_stored_tool_call: &Option<crate::mcp::McpToolCall>,
+// Display successful tool execution (after execution - header + results)
+async fn display_tool_success(
+	stored_tool_call: &Option<crate::mcp::McpToolCall>,
 	res: &crate::mcp::McpToolResult,
 	tool_name: &str,
 	tool_time_ms: u64,
@@ -405,6 +406,9 @@ fn display_tool_success(
 	session_name: &str,
 	tool_id: &str,
 ) {
+	// Display proper tool header with parameters for each parallel tool execution result
+	display_individual_tool_header_with_params(tool_name, stored_tool_call, config).await;
+
 	// Show the actual tool output based on log level using MCP protocol
 	if config.get_log_level().is_info_enabled() || config.get_log_level().is_debug_enabled() {
 		// Extract content using MCP protocol
@@ -429,6 +433,38 @@ fn display_tool_success(
 	// Log the tool response with session name and timing
 	let _ =
 		crate::session::logger::log_tool_result(session_name, tool_id, &res.result, tool_time_ms);
+}
+
+/// Display individual tool header with parameters (for parallel execution results)
+async fn display_individual_tool_header_with_params(
+	tool_name: &str,
+	stored_tool_call: &Option<crate::mcp::McpToolCall>,
+	config: &Config,
+) {
+	use colored::Colorize;
+
+	// Get server name using same logic as execution
+	let server_name =
+		crate::session::chat::response::get_tool_server_name_async(tool_name, config).await;
+
+	// Create formatted header matching the original style
+	let title = format!(
+		" {} | {} ",
+		tool_name.bright_cyan(),
+		server_name.bright_blue()
+	);
+	let separator_length = 70.max(title.len() + 4);
+	let dashes = "─".repeat(separator_length - title.len());
+	let separator = format!("──{}{}──", title, dashes.dimmed());
+	println!("{}", separator);
+
+	// Show parameters if available and log level allows
+	if let Some(tool_call) = stored_tool_call {
+		if config.get_log_level().is_info_enabled() || config.get_log_level().is_debug_enabled() {
+			crate::session::chat::response::display_tool_parameters_full(tool_call, config);
+			println!(); // Extra newline after parameters for better spacing
+		}
+	}
 }
 
 // Display tool output in smart format (for info mode)

@@ -673,29 +673,32 @@ pub async fn perform_smart_truncation(
 			i += 1;
 		}
 
-		// Also remove assistant messages with tool_calls if none of their tool results are preserved
+		// Also remove assistant messages with tool_calls if ANY of their tool results are missing
 		let mut i = 0;
 		while i < preserved_messages.len() {
 			let msg = &preserved_messages[i];
 
 			if msg.role == "assistant" && msg.tool_calls.is_some() {
-				let mut has_tool_results = false;
+				let mut all_tool_results_present = true;
 
-				// Check if any tool results for this assistant message are preserved
+				// Check if ALL tool results for this assistant message are preserved
 				if let Some(tool_calls_value) = &msg.tool_calls {
 					if let Some(tool_calls_array) = tool_calls_value.as_array() {
 						for tool_call in tool_calls_array {
 							if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
 								// Look for tool messages with this tool_call_id
+								let mut found_tool_result = false;
 								for tool_msg in &preserved_messages {
 									if tool_msg.role == "tool"
 										&& tool_msg.tool_call_id.as_ref() == Some(&id.to_string())
 									{
-										has_tool_results = true;
+										found_tool_result = true;
 										break;
 									}
 								}
-								if has_tool_results {
+								// If any tool call doesn't have its result, mark as incomplete
+								if !found_tool_result {
+									all_tool_results_present = false;
 									break;
 								}
 							}
@@ -703,8 +706,8 @@ pub async fn perform_smart_truncation(
 					}
 				}
 
-				// If this assistant message has tool_calls but no tool results are preserved, remove it
-				if !has_tool_results {
+				// If this assistant message has tool_calls but ANY tool results are missing, remove it
+				if !all_tool_results_present {
 					preserved_messages.remove(i);
 					continue; // Don't increment i since we removed an element
 				}
@@ -1028,6 +1031,95 @@ mod tests {
 		assert_eq!(tool_sequences.len(), 2);
 		assert_eq!(tool_sequences[0].0, vec![1, 2]); // Assistant at index 1, tool at index 2
 		assert_eq!(tool_sequences[1].0, vec![4, 5]); // Assistant at index 4, tool at index 5
+	}
+
+	#[test]
+	fn test_partial_tool_results_removal() {
+		let mut messages = vec![
+			create_test_message(
+				"assistant",
+				"I'll use multiple tools",
+				Some(json!([
+					{"id": "call_123", "type": "function", "function": {"name": "tool1"}},
+					{"id": "call_456", "type": "function", "function": {"name": "tool2"}}
+				])),
+				None,
+				None,
+			),
+			create_test_message(
+				"tool",
+				"Tool result 1",
+				None,
+				Some("call_123".to_string()),
+				Some("tool1".to_string()),
+			),
+			// Missing tool result for call_456 - this should cause assistant message removal
+		];
+
+		// Build preserved tool call map
+		let mut preserved_tool_call_map: std::collections::HashMap<String, bool> =
+			std::collections::HashMap::new();
+		for msg in &messages {
+			if msg.role == "assistant" && msg.tool_calls.is_some() {
+				if let Some(tool_calls_value) = &msg.tool_calls {
+					if let Some(tool_calls_array) = tool_calls_value.as_array() {
+						for tool_call in tool_calls_array {
+							if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
+								preserved_tool_call_map.insert(id.to_string(), true);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Remove assistant messages with incomplete tool results
+		let mut i = 0;
+		while i < messages.len() {
+			let msg = &messages[i];
+
+			if msg.role == "assistant" && msg.tool_calls.is_some() {
+				let mut all_tool_results_present = true;
+
+				// Check if ALL tool results for this assistant message are preserved
+				if let Some(tool_calls_value) = &msg.tool_calls {
+					if let Some(tool_calls_array) = tool_calls_value.as_array() {
+						for tool_call in tool_calls_array {
+							if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
+								// Look for tool messages with this tool_call_id
+								let mut found_tool_result = false;
+								for tool_msg in &messages {
+									if tool_msg.role == "tool"
+										&& tool_msg.tool_call_id.as_ref() == Some(&id.to_string())
+									{
+										found_tool_result = true;
+										break;
+									}
+								}
+								// If any tool call doesn't have its result, mark as incomplete
+								if !found_tool_result {
+									all_tool_results_present = false;
+									break;
+								}
+							}
+						}
+					}
+				}
+
+				// If this assistant message has tool_calls but ANY tool results are missing, remove it
+				if !all_tool_results_present {
+					messages.remove(i);
+					continue; // Don't increment i since we removed an element
+				}
+			}
+			i += 1;
+		}
+
+		// Should have removed the assistant message because call_456 has no result
+		// Only the orphaned tool result for call_123 should remain
+		assert_eq!(messages.len(), 1);
+		assert_eq!(messages[0].role, "tool");
+		assert_eq!(messages[0].tool_call_id, Some("call_123".to_string()));
 	}
 
 	#[test]

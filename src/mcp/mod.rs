@@ -513,7 +513,11 @@ pub async fn execute_tool_call(
 	let tool_time_ms = tool_duration.as_millis() as u64;
 
 	match result {
-		Ok(tool_result) => Ok((tool_result, tool_time_ms)),
+		Ok(tool_result) => {
+			// Apply large response handling to ALL tools in one centralized place
+			let checked_result = handle_large_response(tool_result, config)?;
+			Ok((checked_result, tool_time_ms))
+		}
 		Err(e) => Err(e),
 	}
 }
@@ -631,7 +635,7 @@ async fn try_execute_tool_call(
 								dev::execute_shell_command(call, cancellation_token.clone())
 									.await?;
 							result.tool_id = call.tool_id.clone();
-							return handle_large_response(result, config);
+							return Ok(result);
 						}
 						_ => {
 							return Err(anyhow::anyhow!(
@@ -764,7 +768,7 @@ async fn try_execute_tool_call(
 				{
 					Ok(mut result) => {
 						result.tool_id = call.tool_id.clone();
-						return handle_large_response(result, config);
+						return Ok(result);
 					}
 					Err(err) => {
 						return Err(err);

@@ -21,6 +21,14 @@ pub mod functions;
 pub mod html_converter;
 pub mod search;
 
+// Individual search modules
+pub mod api_client;
+pub mod formatters;
+pub mod image_search;
+pub mod news_search;
+pub mod video_search;
+pub mod web_search;
+
 pub use functions::get_all_functions;
 pub use search::{
 	execute_image_search, execute_news_search, execute_video_search, execute_web_search,

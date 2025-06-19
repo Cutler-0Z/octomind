@@ -506,9 +506,10 @@ impl ChatSession {
 
 			// Add content
 			let content = if let Some(limit) = content_limit {
-				if message.content.len() > limit {
+				if message.content.chars().count() > limit {
+					let truncated: String = message.content.chars().take(limit).collect();
 					format!("{}...\n\n*[Content truncated - {} total chars. Use debug mode (/loglevel debug) for full content]*",
-						&message.content[..limit], message.content.len())
+						truncated, message.content.chars().count())
 				} else {
 					message.content.clone()
 				}

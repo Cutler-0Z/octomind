@@ -515,7 +515,7 @@ pub async fn execute_tool_call(
 	match result {
 		Ok(tool_result) => {
 			// Apply large response handling to ALL tools in one centralized place
-			let checked_result = handle_large_response(tool_result, config)?;
+			let checked_result = handle_large_response(tool_result, config).await?;
 			Ok((checked_result, tool_time_ms))
 		}
 		Err(e) => Err(e),
@@ -793,7 +793,7 @@ async fn get_available_tool_names(config: &crate::config::Config) -> Vec<String>
 }
 
 // Helper function to handle large response warnings
-fn handle_large_response(
+async fn handle_large_response(
 	result: McpToolResult,
 	config: &crate::config::Config,
 ) -> Result<McpToolResult> {
@@ -802,10 +802,23 @@ fn handle_large_response(
 	if estimated_tokens > config.mcp_response_warning_threshold {
 		// Create a modified result that warns about the size
 		use colored::Colorize;
+
+		// Get server name for better identification
+		let server_name =
+			crate::session::chat::response::get_tool_server_name_async(&result.tool_name, config)
+				.await;
+
 		println!(
 			"{}",
 			format!(
-				"! WARNING: Tool produced a large output ({} tokens)",
+				"! WARNING: Tool '{}' ({}){} produced a large output ({} tokens)",
+				result.tool_name,
+				server_name,
+				if !result.tool_id.is_empty() {
+					format!(" [ID: {}]", result.tool_id)
+				} else {
+					String::new()
+				},
 				estimated_tokens
 			)
 			.bright_yellow()
@@ -831,12 +844,16 @@ fn handle_large_response(
 			// normally while informing the AI that the user declined the large output.
 			println!(
 				"{}",
-				"Large output declined by user. Continuing conversation...".bright_red()
+				format!(
+					"Large output from '{}' ({}) declined by user. Continuing conversation...",
+					result.tool_name, server_name
+				)
+				.bright_red()
 			);
 			return Ok(McpToolResult::error(
 				result.tool_name.clone(),
 				result.tool_id.clone(),
-				format!("User declined to process large output ({} tokens). The tool executed successfully but the output was too large and the user chose not to include it in the conversation to avoid excessive token usage.", estimated_tokens)
+				format!("User declined to process large output from tool '{}' ({} tokens). The tool executed successfully but the output was too large and the user chose not to include it in the conversation to avoid excessive token usage.", result.tool_name, estimated_tokens)
 			));
 		}
 

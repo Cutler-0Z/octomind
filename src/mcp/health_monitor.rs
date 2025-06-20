@@ -43,7 +43,7 @@ pub async fn start_health_monitor(config: Arc<Config>) -> Result<(), anyhow::Err
 		HEALTH_CHECK_INTERVAL_SECONDS
 	);
 
-	// Get external servers that need monitoring
+	// Get external servers that need monitoring (all external servers, but only restart local ones)
 	let external_servers: Vec<McpServerConfig> = config
 		.mcp
 		.servers
@@ -68,7 +68,20 @@ pub async fn start_health_monitor(config: Arc<Config>) -> Result<(), anyhow::Err
 		external_servers.len(),
 		external_servers
 			.iter()
-			.map(|s| s.name())
+			.map(|s| {
+				let server_type = match s.connection_type() {
+					McpConnectionType::Stdin => "stdin",
+					McpConnectionType::Http => {
+						if s.command().is_some() {
+							"http-local"
+						} else {
+							"http-remote"
+						}
+					}
+					McpConnectionType::Builtin => "builtin",
+				};
+				format!("{}({})", s.name(), server_type)
+			})
 			.collect::<Vec<_>>()
 			.join(", ")
 	);
@@ -238,8 +251,23 @@ async fn check_server_health_and_restart_if_dead(
 	Ok(())
 }
 
-/// Attempt to restart a dead server
+/// Attempt to restart a dead server (only for servers that can be restarted)
 async fn restart_dead_server(server: &McpServerConfig) -> Result<(), anyhow::Error> {
+	// Check if this server can actually be restarted
+	let can_restart = match server.connection_type() {
+		McpConnectionType::Stdin => true, // Stdin servers can always be restarted
+		McpConnectionType::Http => server.command().is_some(), // Only local HTTP servers can be restarted
+		McpConnectionType::Builtin => false, // Builtin servers don't need restart
+	};
+
+	if !can_restart {
+		crate::log_debug!(
+			"Server '{}' is a remote server and cannot be restarted by health monitor",
+			server.name()
+		);
+		return Ok(()); // Not an error - just can't restart remote servers
+	}
+
 	crate::log_debug!(
 		"Health monitor attempting to restart dead server '{}'",
 		server.name()

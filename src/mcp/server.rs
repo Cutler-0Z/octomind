@@ -592,13 +592,23 @@ async fn execute_tool_call_internal(
 async fn get_server_base_url(server: &McpServerConfig) -> Result<String> {
 	match server.connection_type() {
 		McpConnectionType::Http => {
-			// Check if this is a local server that needs to be started
-			if server.command().is_some() {
-				// This is a local server, ensure it's running
-				process::ensure_server_running(server).await
-			} else if let Some(url) = server.url() {
-				// This is a remote server with a URL
+			// First check if this is a remote server with a URL (should not be started)
+			if let Some(url) = server.url() {
+				// This is a remote server with a URL - return it directly
+				crate::log_debug!(
+					"Using remote HTTP server '{}' at URL: {}",
+					server.name(),
+					url
+				);
 				Ok(url.trim_end_matches("/").to_string())
+			} else if server.command().is_some() {
+				// This is a local server, ensure it's running
+				crate::log_debug!(
+					"Starting local HTTP server '{}' with command: {:?}",
+					server.name(),
+					server.command()
+				);
+				process::ensure_server_running(server).await
 			} else {
 				// Neither remote nor local configuration
 				Err(anyhow::anyhow!("Invalid server configuration: neither URL nor command specified for server '{}'", server.name()))

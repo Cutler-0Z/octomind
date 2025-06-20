@@ -14,7 +14,7 @@
 
 // Background health monitoring for MCP servers
 
-use super::process::{self, ServerHealth};
+use super::process::{self, is_server_running, ServerHealth};
 use crate::config::{Config, McpConnectionType, McpServerConfig};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -128,8 +128,39 @@ pub fn stop_health_monitor() {
 async fn check_server_health_and_restart_if_dead(
 	server: &McpServerConfig,
 ) -> Result<(), anyhow::Error> {
-	// Get current server health status
-	let health_status = process::get_server_health(server.name());
+	// Perform different health checks based on server type
+	let health_status = match server.connection_type() {
+		McpConnectionType::Stdin => {
+			// For stdin servers, check if the process is running
+			if is_server_running(server.name()) {
+				ServerHealth::Running
+			} else {
+				ServerHealth::Dead
+			}
+		}
+		McpConnectionType::Http => {
+			if server.command().is_some() {
+				// Local HTTP server - check if the process is running
+				if is_server_running(server.name()) {
+					ServerHealth::Running
+				} else {
+					ServerHealth::Dead
+				}
+			} else {
+				// Remote HTTP server - perform HTTP health check
+				match perform_http_health_check(server).await {
+					Ok(true) => ServerHealth::Running,
+					Ok(false) => ServerHealth::Dead,
+					Err(_) => ServerHealth::Dead,
+				}
+			}
+		}
+		McpConnectionType::Builtin => {
+			// Builtin servers are always running
+			ServerHealth::Running
+		}
+	};
+
 	let restart_info = process::get_server_restart_info(server.name());
 
 	crate::log_debug!(
@@ -139,12 +170,13 @@ async fn check_server_health_and_restart_if_dead(
 		restart_info.restart_count
 	);
 
-	// Update last health check time
+	// Update health status and last health check time
 	{
 		let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
 		let info = restart_info_guard
 			.entry(server.name().to_string())
 			.or_default();
+		info.health_status = health_status;
 		info.last_health_check = Some(std::time::SystemTime::now());
 	}
 
@@ -350,4 +382,45 @@ pub async fn force_health_check(config: &Config) -> Result<(), anyhow::Error> {
 	}
 
 	Ok(())
+}
+
+/// Perform HTTP health check for remote servers
+async fn perform_http_health_check(server: &McpServerConfig) -> Result<bool, anyhow::Error> {
+	if let Some(url) = server.url() {
+		let client = reqwest::Client::builder()
+			.timeout(std::time::Duration::from_secs(5)) // 5 second timeout for health checks
+			.build()?;
+
+		// Try to hit the tools/list endpoint to check if server is responding
+		let health_url = format!("{}/tools/list", url.trim_end_matches("/"));
+
+		match client.get(&health_url).send().await {
+			Ok(response) => {
+				let is_healthy =
+					response.status().is_success() || response.status().is_client_error();
+				// Both 2xx and 4xx are considered "server responding" - 5xx or connection errors are not
+				crate::log_debug!(
+					"HTTP health check for '{}': {} (status: {})",
+					server.name(),
+					if is_healthy {
+						"✅ Healthy"
+					} else {
+						"❌ Unhealthy"
+					},
+					response.status()
+				);
+				Ok(is_healthy)
+			}
+			Err(e) => {
+				crate::log_debug!(
+					"HTTP health check for '{}': ❌ Failed - {}",
+					server.name(),
+					e
+				);
+				Ok(false)
+			}
+		}
+	} else {
+		Err(anyhow::anyhow!("No URL configured for HTTP server"))
+	}
 }

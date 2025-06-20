@@ -100,11 +100,14 @@ async fn handle_mcp_info(config: &Config, role: &str) -> Result<bool> {
 				)
 			}
 			McpConnectionType::Http | McpConnectionType::Stdin => {
-				// External servers - get from status report
-				server_report
-					.get(server.name())
-					.map(|(h, r)| (*h, r.clone()))
-					.unwrap_or((crate::mcp::process::ServerHealth::Dead, Default::default()))
+				// External servers - get from status report or check on-demand
+				if let Some((h, r)) = server_report.get(server.name()) {
+					(*h, r.clone())
+				} else {
+					// Server not in status report yet - perform on-demand health check
+					let health = check_server_health_on_demand(server).await;
+					(health, Default::default())
+				}
 			}
 		};
 
@@ -216,10 +219,15 @@ async fn handle_mcp_full(config: &Config, role: &str) -> Result<bool> {
 				crate::mcp::process::ServerHealth::Running,
 				Default::default(),
 			),
-			McpConnectionType::Http | McpConnectionType::Stdin => server_report
-				.get(server_name)
-				.map(|(h, r)| (*h, r.clone()))
-				.unwrap_or((crate::mcp::process::ServerHealth::Dead, Default::default())),
+			McpConnectionType::Http | McpConnectionType::Stdin => {
+				if let Some((h, r)) = server_report.get(server_name) {
+					(*h, r.clone())
+				} else {
+					// Server not in status report yet - perform on-demand health check
+					let health = check_server_health_on_demand(server).await;
+					(health, Default::default())
+				}
+			}
 		};
 
 		let health_display = match health {
@@ -423,10 +431,13 @@ async fn handle_mcp_health(config: &Config, role: &str) -> Result<bool> {
 
 	for server in &config_for_role.mcp.servers {
 		if let McpConnectionType::Http | McpConnectionType::Stdin = server.connection_type() {
-			let (health, restart_info) = server_report
-				.get(server.name())
-				.map(|(h, r)| (*h, r.clone()))
-				.unwrap_or((crate::mcp::process::ServerHealth::Dead, Default::default()));
+			let (health, restart_info) = if let Some((h, r)) = server_report.get(server.name()) {
+				(*h, r.clone())
+			} else {
+				// Server not in status report yet - perform on-demand health check
+				let health = check_server_health_on_demand(server).await;
+				(health, Default::default())
+			};
 
 			let health_display = match health {
 				crate::mcp::process::ServerHealth::Running => "✅ Running".green(),
@@ -613,4 +624,64 @@ fn handle_mcp_invalid() -> Result<bool> {
 		"Usage: /mcp [list|info|full|health|dump|validate]".bright_blue()
 	);
 	Ok(false)
+}
+/// Perform on-demand health check for a server that's not in the status report
+async fn check_server_health_on_demand(
+	server: &crate::config::McpServerConfig,
+) -> crate::mcp::process::ServerHealth {
+	match server.connection_type() {
+		McpConnectionType::Stdin => {
+			// For stdin servers, check if the process is running
+			if crate::mcp::process::is_server_running(server.name()) {
+				crate::mcp::process::ServerHealth::Running
+			} else {
+				crate::mcp::process::ServerHealth::Dead
+			}
+		}
+		McpConnectionType::Http => {
+			if server.command().is_some() {
+				// Local HTTP server - check if the process is running
+				if crate::mcp::process::is_server_running(server.name()) {
+					crate::mcp::process::ServerHealth::Running
+				} else {
+					crate::mcp::process::ServerHealth::Dead
+				}
+			} else {
+				// Remote HTTP server - perform HTTP health check
+				match perform_http_health_check_sync(server).await {
+					Ok(true) => crate::mcp::process::ServerHealth::Running,
+					Ok(false) => crate::mcp::process::ServerHealth::Dead,
+					Err(_) => crate::mcp::process::ServerHealth::Dead,
+				}
+			}
+		}
+		McpConnectionType::Builtin => {
+			// Builtin servers are always running
+			crate::mcp::process::ServerHealth::Running
+		}
+	}
+}
+
+/// Perform HTTP health check for remote servers (duplicate of health_monitor function)
+async fn perform_http_health_check_sync(server: &crate::config::McpServerConfig) -> Result<bool> {
+	if let Some(url) = server.url() {
+		let client = reqwest::Client::builder()
+			.timeout(std::time::Duration::from_secs(5)) // 5 second timeout for health checks
+			.build()?;
+
+		// Try to hit the tools/list endpoint to check if server is responding
+		let health_url = format!("{}/tools/list", url.trim_end_matches("/"));
+
+		match client.get(&health_url).send().await {
+			Ok(response) => {
+				let is_healthy =
+					response.status().is_success() || response.status().is_client_error();
+				// Both 2xx and 4xx are considered "server responding" - 5xx or connection errors are not
+				Ok(is_healthy)
+			}
+			Err(_) => Ok(false),
+		}
+	} else {
+		Err(anyhow::anyhow!("No URL configured for HTTP server"))
+	}
 }

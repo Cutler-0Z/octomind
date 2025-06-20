@@ -1101,9 +1101,11 @@ pub fn cleanup_server_process(server_name: &str) -> Result<()> {
 }
 
 // Check if a server process is still running with enhanced health tracking
+// This function now properly handles different server types
 pub fn is_server_running(server_name: &str) -> bool {
 	let processes = SERVER_PROCESSES.read().unwrap();
 	if let Some(process_arc) = processes.get(server_name) {
+		// This is a local server (stdin or local HTTP) - check the process
 		let mut process = process_arc.lock().unwrap();
 		let is_alive = process
 			.try_wait()
@@ -1126,16 +1128,17 @@ pub fn is_server_running(server_name: &str) -> bool {
 
 		is_alive
 	} else {
-		// Update health status - server not in registry
+		// Server not in process registry - could be a remote server or not started yet
+		// For now, mark as unknown and let the proper health check determine status
 		{
 			let mut restart_info_guard = SERVER_RESTART_INFO.write().unwrap();
 			let info = restart_info_guard
 				.entry(server_name.to_string())
 				.or_default();
-			info.health_status = ServerHealth::Dead;
+			// Don't automatically mark as Dead - let proper health check handle it
 			info.last_health_check = Some(SystemTime::now());
 		}
-		false
+		false // Return false for "not running locally" but don't mark as Dead
 	}
 }
 

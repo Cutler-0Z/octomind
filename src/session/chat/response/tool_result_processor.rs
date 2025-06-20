@@ -418,6 +418,12 @@ fn handle_follow_up_cost_tracking(
 				chat_session.session.info.total_cost
 			);
 
+			// CRITICAL: Log session stats immediately after cost update
+			let _ = crate::session::logger::log_session_stats(
+				&chat_session.session.info.name,
+				&chat_session.session.info,
+			);
+
 			// Enhanced debug for follow-up calls
 			log_debug!("Tool response usage detail:");
 			if let Ok(usage_str) = serde_json::to_string_pretty(usage) {
@@ -461,6 +467,12 @@ fn handle_follow_up_cost_tracking(
 					"Using cost ${:.5} from raw response (total now: ${:.5})",
 					cost,
 					chat_session.session.info.total_cost
+				);
+
+				// CRITICAL: Log session stats immediately after cost update
+				let _ = crate::session::logger::log_session_stats(
+					&chat_session.session.info.name,
+					&chat_session.session.info,
 				);
 			} else {
 				// Only show error if no cost data found

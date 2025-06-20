@@ -146,8 +146,22 @@ impl ChatSession {
 		};
 
 		// Check if we should load or create a session
-		let should_resume = (resume.is_some() || (name.is_some() && session_file.exists()))
-			&& session_file.exists();
+		let should_resume = if resume.is_some() {
+			// Explicit resume request - session MUST exist
+			if !session_file.exists() {
+				return Err(anyhow::anyhow!(
+					"Session '{}' not found. Cannot resume non-existent session.",
+					session_name
+				));
+			}
+			true
+		} else if name.is_some() && session_file.exists() {
+			// Named session that exists - resume it
+			true
+		} else {
+			// Create new session
+			false
+		};
 
 		if should_resume {
 			use colored::*;
@@ -234,7 +248,16 @@ impl ChatSession {
 					Ok(chat_session)
 				}
 				Err(e) => {
-					// If loading fails, inform the user and create a new session
+					// If this was an explicit resume request, return the error
+					if resume.is_some() {
+						return Err(anyhow::anyhow!(
+							"Failed to load session '{}': {}. Cannot resume corrupted or invalid session.",
+							session_name,
+							e
+						));
+					}
+
+					// If loading fails for named session, inform the user and create a new session
 					println!(
 						"{}: {}",
 						format!("Failed to load session {}", session_name).bright_red(),

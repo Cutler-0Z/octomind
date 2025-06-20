@@ -281,19 +281,21 @@ impl Session {
 		self.info.total_layer_time_ms += total_time_ms;
 	}
 
-	// Save the session to a file - clean JSONL approach without summary
+	// Save the session to a file - append-only approach
 	pub fn save(&self) -> Result<(), anyhow::Error> {
 		if let Some(session_file) = &self.session_file {
-			// Always rewrite the entire file for simplicity and consistency
-			// Create the file (or truncate if exists)
-			let _ = File::create(session_file)?;
-
-			// Save all messages in standard JSONL format
-			for message in &self.messages {
-				let message_json = serde_json::to_string(message)?;
-				append_to_session_file(session_file, &message_json)?;
-			}
-
+			// In append-only design, individual messages are already saved when added
+			// This method just ensures session metadata is up to date
+			// We append an updated SUMMARY entry to reflect current session state
+			let summary_entry = serde_json::json!({
+				"type": "SUMMARY",
+				"timestamp": std::time::SystemTime::now()
+					.duration_since(std::time::UNIX_EPOCH)
+					.unwrap_or_default()
+					.as_secs(),
+				"session_info": &self.info
+			});
+			append_to_session_file(session_file, &serde_json::to_string(&summary_entry)?)?;
 			Ok(())
 		} else {
 			Err(anyhow::anyhow!("No session file specified"))
@@ -429,6 +431,53 @@ pub fn load_session(session_file: &PathBuf) -> Result<Session, anyhow::Error> {
 						// are already in the session file as regular assistant messages
 						continue;
 					}
+					"STATS" => {
+						// Extract cost and token information from STATS entries
+						if let Some(info) = &mut session_info {
+							if let Some(total_cost) =
+								json_value.get("total_cost").and_then(|c| c.as_f64())
+							{
+								info.total_cost = total_cost;
+							}
+							if let Some(input_tokens) =
+								json_value.get("input_tokens").and_then(|t| t.as_u64())
+							{
+								info.input_tokens = input_tokens;
+							}
+							if let Some(output_tokens) =
+								json_value.get("output_tokens").and_then(|t| t.as_u64())
+							{
+								info.output_tokens = output_tokens;
+							}
+							if let Some(cached_tokens) =
+								json_value.get("cached_tokens").and_then(|t| t.as_u64())
+							{
+								info.cached_tokens = cached_tokens;
+							}
+							if let Some(tool_calls) =
+								json_value.get("tool_calls").and_then(|t| t.as_u64())
+							{
+								info.tool_calls = tool_calls;
+							}
+							if let Some(api_time) =
+								json_value.get("total_api_time_ms").and_then(|t| t.as_u64())
+							{
+								info.total_api_time_ms = api_time;
+							}
+							if let Some(tool_time) = json_value
+								.get("total_tool_time_ms")
+								.and_then(|t| t.as_u64())
+							{
+								info.total_tool_time_ms = tool_time;
+							}
+							if let Some(layer_time) = json_value
+								.get("total_layer_time_ms")
+								.and_then(|t| t.as_u64())
+							{
+								info.total_layer_time_ms = layer_time;
+							}
+						}
+					}
 					"API_REQUEST" | "API_RESPONSE" | "TOOL_CALL" | "TOOL_RESULT" | "CACHE"
 					| "ERROR" | "SYSTEM" | "USER" | "ASSISTANT" => {
 						// Skip debug log entries during message parsing
@@ -549,9 +598,161 @@ pub fn load_session(session_file: &PathBuf) -> Result<Session, anyhow::Error> {
 
 		Ok(session)
 	} else {
-		Err(anyhow::anyhow!(
-			"Invalid session file: missing session info"
-		))
+		// Fallback: Create default session info when SUMMARY is missing
+		// This allows loading of older sessions or sessions with missing metadata
+
+		// Extract session name from file path
+		let session_name = session_file
+			.file_stem()
+			.and_then(|s| s.to_str())
+			.unwrap_or("unknown")
+			.to_string();
+
+		// Try to infer model from messages or use default
+		let default_model = final_messages
+			.iter()
+			.find_map(|_msg| {
+				// Look for any model information in message metadata
+				// This is a best-effort attempt
+				None::<String> // For now, we'll use a default
+			})
+			.unwrap_or_else(|| "openrouter:anthropic/claude-sonnet-4".to_string());
+
+		// Get file creation time as fallback for created_at
+		let created_at = session_file
+			.metadata()
+			.and_then(|meta| {
+				meta.created()
+					.ok()
+					.ok_or(std::io::Error::other("No creation time"))
+			})
+			.and_then(|time| {
+				time.duration_since(std::time::UNIX_EPOCH)
+					.ok()
+					.ok_or(std::io::Error::other("Invalid time"))
+			})
+			.map(|duration| duration.as_secs())
+			.unwrap_or_else(|_| {
+				std::time::SystemTime::now()
+					.duration_since(std::time::UNIX_EPOCH)
+					.unwrap_or_default()
+					.as_secs()
+			});
+
+		// Create default session info
+		let default_info = SessionInfo {
+			name: session_name,
+			created_at,
+			model: default_model.clone(),
+			provider: if default_model.starts_with("openrouter:") {
+				"openrouter".to_string()
+			} else if default_model.starts_with("anthropic:") {
+				"anthropic".to_string()
+			} else if default_model.starts_with("openai:") {
+				"openai".to_string()
+			} else {
+				"unknown".to_string()
+			},
+			input_tokens: 0,
+			output_tokens: 0,
+			cached_tokens: 0,
+			total_cost: 0.0,
+			duration_seconds: 0,
+			layer_stats: Vec::new(),
+			tool_calls: 0,
+			total_api_time_ms: 0,
+			total_tool_time_ms: 0,
+			total_layer_time_ms: 0,
+		};
+
+		// Extract runtime state from log file
+		let runtime_state = extract_runtime_state_from_log(session_file)?;
+
+		// Apply runtime state to default session info
+		let mut info = default_info;
+		if let Some(model) = runtime_state.model {
+			info.model = model;
+		}
+
+		// Extract cost and stats information from STATS entries in fallback mode
+		let file = File::open(session_file)?;
+		let reader = BufReader::new(file);
+		for line in reader.lines() {
+			let line = line?;
+			if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&line) {
+				if let Some(log_type) = json_value.get("type").and_then(|t| t.as_str()) {
+					if log_type == "STATS" {
+						// Extract cost and token information from STATS entries
+						if let Some(total_cost) =
+							json_value.get("total_cost").and_then(|c| c.as_f64())
+						{
+							info.total_cost = total_cost;
+						}
+						if let Some(input_tokens) =
+							json_value.get("input_tokens").and_then(|t| t.as_u64())
+						{
+							info.input_tokens = input_tokens;
+						}
+						if let Some(output_tokens) =
+							json_value.get("output_tokens").and_then(|t| t.as_u64())
+						{
+							info.output_tokens = output_tokens;
+						}
+						if let Some(cached_tokens) =
+							json_value.get("cached_tokens").and_then(|t| t.as_u64())
+						{
+							info.cached_tokens = cached_tokens;
+						}
+						if let Some(tool_calls) =
+							json_value.get("tool_calls").and_then(|t| t.as_u64())
+						{
+							info.tool_calls = tool_calls;
+						}
+						if let Some(api_time) =
+							json_value.get("total_api_time_ms").and_then(|t| t.as_u64())
+						{
+							info.total_api_time_ms = api_time;
+						}
+						if let Some(tool_time) = json_value
+							.get("total_tool_time_ms")
+							.and_then(|t| t.as_u64())
+						{
+							info.total_tool_time_ms = tool_time;
+						}
+						if let Some(layer_time) = json_value
+							.get("total_layer_time_ms")
+							.and_then(|t| t.as_u64())
+						{
+							info.total_layer_time_ms = layer_time;
+						}
+					}
+				}
+			}
+		}
+
+		let session = Session {
+			info,
+			messages: final_messages,
+			session_file: Some(session_file.clone()),
+			current_non_cached_tokens: 0,
+			current_total_tokens: 0,
+			last_cache_checkpoint_time: current_timestamp(),
+		};
+
+		// Save a SUMMARY entry to fix the session file for future loads
+		// DISABLED: This was causing session corruption by appending multiple SUMMARY entries
+		// let summary_entry = serde_json::json!({
+		// 	"type": "SUMMARY",
+		// 	"timestamp": std::time::SystemTime::now()
+		// 		.duration_since(std::time::UNIX_EPOCH)
+		// 		.unwrap_or_default()
+		// 		.as_secs(),
+		// 	"session_info": &session.info
+		// });
+		// let _ = append_to_session_file(session_file, &serde_json::to_string(&summary_entry)?);
+
+		println!("⚠️  Session loaded with default metadata (SUMMARY was missing)");
+		Ok(session)
 	}
 }
 

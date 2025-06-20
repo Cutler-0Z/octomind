@@ -1275,12 +1275,43 @@ pub async fn run_interactive_session_with_input<T: clap::Args + std::fmt::Debug>
 	.expect("Error setting Ctrl+C handler");
 
 	// Set the thread-local config for logging macros
-	let current_config = config_for_role.clone();
+	let mut current_config = config_for_role.clone();
 	crate::config::set_thread_config(&current_config);
 
 	// Process the single input (same logic as interactive session)
 	let mut input = initial_input.to_string();
 	let operation_cancelled = Arc::new(AtomicBool::new(false));
+
+	// Check if this is a command (same logic as interactive session)
+	if input.starts_with('/') {
+		use colored::*;
+
+		// Handle special /done command separately
+		if input.trim() == "/done" {
+			println!(
+				"{}",
+				"✓ Session optimized and ready for next message".bright_green()
+			);
+			let _ = chat_session.save();
+			return Ok(());
+		}
+
+		// Process the command
+		let exit = chat_session
+			.process_command(&input, &mut current_config, &session_args.role)
+			.await?;
+
+		if exit {
+			// Check if it's a session switch command
+			if input.starts_with(crate::session::chat::commands::SESSION_COMMAND) {
+				println!("{}", "Note: Session switching is not supported in run mode. Use 'octomind session' for interactive session management.".yellow());
+			}
+		}
+
+		// Save session after command execution
+		let _ = chat_session.save();
+		return Ok(());
+	}
 
 	// Layer processing if enabled and first message - same as interactive
 	if current_config.get_enable_layers(&session_args.role) && !first_message_processed {

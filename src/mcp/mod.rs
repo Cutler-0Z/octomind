@@ -251,14 +251,14 @@ pub async fn initialize_servers_for_role(config: &crate::config::Config) -> Resu
 
 	for server in &enabled_servers {
 		// Only initialize external servers that need to be started
-		if let McpConnectionType::Http | McpConnectionType::Stdin = server.connection_type {
-			crate::log_debug!("Initializing external server: {}", server.name);
+		if let McpConnectionType::Http | McpConnectionType::Stdin = server.connection_type() {
+			crate::log_debug!("Initializing external server: {}", server.name());
 
 			// Check if server is already running to avoid double initialization
 			if server::is_server_already_running_with_config(server) {
 				crate::log_debug!(
 					"Server '{}' is already running - skipping initialization",
-					server.name
+					server.name()
 				);
 				continue;
 			}
@@ -268,7 +268,7 @@ pub async fn initialize_servers_for_role(config: &crate::config::Config) -> Resu
 				Ok(functions) => {
 					crate::log_debug!(
 						"Successfully initialized server '{}' with {} functions",
-						server.name,
+						server.name(),
 						functions.len()
 					);
 					for func in &functions {
@@ -278,7 +278,7 @@ pub async fn initialize_servers_for_role(config: &crate::config::Config) -> Resu
 				Err(e) => {
 					crate::log_debug!(
 						"Failed to initialize server '{}': {} (will retry on first use)",
-						server.name,
+						server.name(),
 						e
 					);
 					// Don't fail startup - just log and continue
@@ -288,8 +288,8 @@ pub async fn initialize_servers_for_role(config: &crate::config::Config) -> Resu
 			// Internal servers (Developer/Filesystem) don't need initialization
 			crate::log_debug!(
 				"Skipping initialization for internal server: {} ({:?})",
-				server.name,
-				server.connection_type
+				server.name(),
+				server.connection_type()
 			);
 		}
 	}
@@ -320,19 +320,19 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 	let enabled_servers: Vec<crate::config::McpServerConfig> = config.mcp.servers.to_vec();
 
 	for server in enabled_servers {
-		match server.connection_type {
+		match server.connection_type() {
 			McpConnectionType::Builtin => {
-				match server.name.as_str() {
+				match server.name() {
 					"developer" => {
 						let server_functions =
-							get_cached_internal_functions("developer", &server.tools, || {
+							get_cached_internal_functions("developer", server.tools(), || {
 								dev::get_all_functions()
 							});
 						functions.extend(server_functions);
 					}
 					"filesystem" => {
 						let server_functions =
-							get_cached_internal_functions("filesystem", &server.tools, || {
+							get_cached_internal_functions("filesystem", server.tools(), || {
 								fs::get_all_functions()
 							});
 						functions.extend(server_functions);
@@ -342,19 +342,19 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 						// Don't cache agent functions since they depend on config
 						let server_functions = agent::get_all_functions(config);
 						let filtered_functions =
-							filter_tools_by_patterns(server_functions, &server.tools);
+							filter_tools_by_patterns(server_functions, server.tools());
 						functions.extend(filtered_functions);
 					}
 					"web" => {
 						let server_functions =
-							get_cached_internal_functions("web", &server.tools, || {
+							get_cached_internal_functions("web", server.tools(), || {
 								web::get_all_functions()
 							});
 						functions.extend(server_functions);
 					}
 					_ => {
 						// Unknown builtin server
-						crate::log_debug!("Unknown builtin server: {}", server.name);
+						crate::log_debug!("Unknown builtin server: {}", server.name());
 					}
 				}
 			}
@@ -364,13 +364,13 @@ pub async fn get_available_functions(config: &crate::config::Config) -> Vec<McpF
 				match server::get_server_functions_cached(&server).await {
 					Ok(server_functions) => {
 						let filtered_functions =
-							filter_tools_by_patterns(server_functions, &server.tools);
+							filter_tools_by_patterns(server_functions, server.tools());
 						functions.extend(filtered_functions);
 					}
 					Err(e) => {
 						crate::log_error!(
 							"Failed to get cached functions from external server '{}': {} (will be available when server starts)",
-							server.name,
+							server.name(),
 							e
 						);
 						// Don't fail - just continue without this server's functions
@@ -531,17 +531,17 @@ pub async fn build_tool_server_map(
 
 	for server in enabled_servers {
 		// Get all functions this server provides
-		let server_functions = match server.connection_type {
+		let server_functions = match server.connection_type() {
 			McpConnectionType::Builtin => {
-				match server.name.as_str() {
+				match server.name() {
 					"developer" => {
 						// Developer server only has shell and other dev tools (agent moved to separate server)
-						get_cached_internal_functions("developer", &server.tools, || {
+						get_cached_internal_functions("developer", server.tools(), || {
 							dev::get_all_functions()
 						})
 					}
 					"filesystem" => {
-						get_cached_internal_functions("filesystem", &server.tools, || {
+						get_cached_internal_functions("filesystem", server.tools(), || {
 							fs::get_all_functions()
 						})
 					}
@@ -549,13 +549,13 @@ pub async fn build_tool_server_map(
 						// For agent server, get all agent functions based on config
 						// Don't cache agent functions since they depend on config
 						let server_functions = agent::get_all_functions(config);
-						filter_tools_by_patterns(server_functions, &server.tools)
+						filter_tools_by_patterns(server_functions, server.tools())
 					}
-					"web" => get_cached_internal_functions("web", &server.tools, || {
+					"web" => get_cached_internal_functions("web", server.tools(), || {
 						web::get_all_functions()
 					}),
 					_ => {
-						crate::log_debug!("Unknown builtin server: {}", server.name);
+						crate::log_debug!("Unknown builtin server: {}", server.name());
 						Vec::new()
 					}
 				}
@@ -563,7 +563,7 @@ pub async fn build_tool_server_map(
 			McpConnectionType::Http | McpConnectionType::Stdin => {
 				// For external servers, get their actual functions
 				match server::get_server_functions_cached(&server).await {
-					Ok(functions) => filter_tools_by_patterns(functions, &server.tools),
+					Ok(functions) => filter_tools_by_patterns(functions, server.tools()),
 					Err(_) => Vec::new(), // Server not available, skip
 				}
 			}
@@ -610,8 +610,8 @@ async fn try_execute_tool_call(
 		crate::log_debug!(
 			"Routing tool '{}' to server '{}' ({:?})",
 			call.tool_name,
-			target_server.name,
-			target_server.connection_type
+			target_server.name(),
+			target_server.connection_type()
 		);
 
 		// Check for cancellation before execution
@@ -622,14 +622,14 @@ async fn try_execute_tool_call(
 		}
 
 		// Execute on the target server
-		match target_server.connection_type {
+		match target_server.connection_type() {
 			McpConnectionType::Builtin => {
-				match target_server.name.as_str() {
+				match target_server.name() {
 					"developer" => match call.tool_name.as_str() {
 						"shell" => {
 							crate::log_debug!(
 								"Executing shell command via developer server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								dev::execute_shell_command(call, cancellation_token.clone())
@@ -648,7 +648,7 @@ async fn try_execute_tool_call(
 						"text_editor" => {
 							crate::log_debug!(
 								"Executing text_editor via filesystem server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								fs::execute_text_editor(call, cancellation_token.clone()).await?;
@@ -658,7 +658,7 @@ async fn try_execute_tool_call(
 						"list_files" => {
 							crate::log_debug!(
 								"Executing list_files via filesystem server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								fs::execute_list_files(call, cancellation_token.clone()).await?;
@@ -678,7 +678,7 @@ async fn try_execute_tool_call(
 							crate::log_debug!(
 								"Executing agent command '{}' via agent server '{}'",
 								call.tool_name,
-								target_server.name
+								target_server.name()
 							);
 							let mut result = agent::execute_agent_command(
 								call,
@@ -699,7 +699,7 @@ async fn try_execute_tool_call(
 						"web_search" => {
 							crate::log_debug!(
 								"Executing web_search via web server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								web::execute_web_search(call, cancellation_token.clone()).await?;
@@ -709,7 +709,7 @@ async fn try_execute_tool_call(
 						"image_search" => {
 							crate::log_debug!(
 								"Executing image_search via web server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								web::execute_image_search(call, cancellation_token.clone()).await?;
@@ -719,7 +719,7 @@ async fn try_execute_tool_call(
 						"video_search" => {
 							crate::log_debug!(
 								"Executing video_search via web server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								web::execute_video_search(call, cancellation_token.clone()).await?;
@@ -729,7 +729,7 @@ async fn try_execute_tool_call(
 						"news_search" => {
 							crate::log_debug!(
 								"Executing news_search via web server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								web::execute_news_search(call, cancellation_token.clone()).await?;
@@ -739,7 +739,7 @@ async fn try_execute_tool_call(
 						"read_html" => {
 							crate::log_debug!(
 								"Executing read_html via web server '{}'",
-								target_server.name
+								target_server.name()
 							);
 							let mut result =
 								web::execute_read_html(call, cancellation_token.clone()).await?;
@@ -756,7 +756,7 @@ async fn try_execute_tool_call(
 					_ => {
 						return Err(anyhow::anyhow!(
 							"Unknown builtin server: {}",
-							target_server.name
+							target_server.name()
 						));
 					}
 				}

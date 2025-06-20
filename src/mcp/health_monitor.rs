@@ -50,7 +50,7 @@ pub async fn start_health_monitor(config: Arc<Config>) -> Result<(), anyhow::Err
 		.iter()
 		.filter(|server| {
 			matches!(
-				server.connection_type,
+				server.connection_type(),
 				McpConnectionType::Http | McpConnectionType::Stdin
 			)
 		})
@@ -68,7 +68,7 @@ pub async fn start_health_monitor(config: Arc<Config>) -> Result<(), anyhow::Err
 		external_servers.len(),
 		external_servers
 			.iter()
-			.map(|s| s.name.as_str())
+			.map(|s| s.name())
 			.collect::<Vec<_>>()
 			.join(", ")
 	);
@@ -90,7 +90,7 @@ pub async fn start_health_monitor(config: Arc<Config>) -> Result<(), anyhow::Err
 			// Perform health check on all external servers and restart if process is dead
 			for server in &external_servers {
 				if let Err(e) = check_server_health_and_restart_if_dead(server).await {
-					crate::log_debug!("Health monitor error for server '{}': {}", server.name, e);
+					crate::log_debug!("Health monitor error for server '{}': {}", server.name(), e);
 				}
 			}
 		}
@@ -116,12 +116,12 @@ async fn check_server_health_and_restart_if_dead(
 	server: &McpServerConfig,
 ) -> Result<(), anyhow::Error> {
 	// Get current server health status
-	let health_status = process::get_server_health(&server.name);
-	let restart_info = process::get_server_restart_info(&server.name);
+	let health_status = process::get_server_health(server.name());
+	let restart_info = process::get_server_restart_info(server.name());
 
 	crate::log_debug!(
 		"Health check: server '{}' status = {:?}, restart_count = {}",
-		server.name,
+		server.name(),
 		health_status,
 		restart_info.restart_count
 	);
@@ -129,7 +129,9 @@ async fn check_server_health_and_restart_if_dead(
 	// Update last health check time
 	{
 		let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
-		let info = restart_info_guard.entry(server.name.clone()).or_default();
+		let info = restart_info_guard
+			.entry(server.name().to_string())
+			.or_default();
 		info.last_health_check = Some(std::time::SystemTime::now());
 	}
 
@@ -138,20 +140,20 @@ async fn check_server_health_and_restart_if_dead(
 			// Server process is actually dead - this is when we should restart
 			crate::log_debug!(
 				"Health monitor detected dead server '{}' - attempting restart",
-				server.name
+				server.name()
 			);
 
 			// Check if we should attempt restart (respect max attempts)
 			if restart_info.restart_count >= 3 {
 				crate::log_debug!(
 					"Server '{}' has exceeded max restart attempts ({}), marking as failed",
-					server.name,
+					server.name(),
 					restart_info.restart_count
 				);
 
 				// Mark as failed to prevent further restart attempts
 				let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
-				if let Some(info) = restart_info_guard.get_mut(&server.name) {
+				if let Some(info) = restart_info_guard.get_mut(server.name()) {
 					info.health_status = ServerHealth::Failed;
 				}
 				return Ok(());
@@ -166,7 +168,7 @@ async fn check_server_health_and_restart_if_dead(
 				if time_since_restart < Duration::from_secs(30) {
 					crate::log_debug!(
 						"Server '{}' is in cooldown period, skipping restart attempt",
-						server.name
+						server.name()
 					);
 					return Ok(());
 				}
@@ -177,13 +179,13 @@ async fn check_server_health_and_restart_if_dead(
 				Ok(()) => {
 					crate::log_info!(
 						"Health monitor successfully restarted dead server '{}'",
-						server.name
+						server.name()
 					);
 				}
 				Err(e) => {
 					crate::log_debug!(
 						"Health monitor failed to restart dead server '{}': {}",
-						server.name,
+						server.name(),
 						e
 					);
 				}
@@ -200,12 +202,12 @@ async fn check_server_health_and_restart_if_dead(
 				if time_since_last_restart > Duration::from_secs(300) {
 					crate::log_debug!(
 						"Resetting failed state for server '{}' after cooldown period",
-						server.name
+						server.name()
 					);
-					if let Err(e) = process::reset_server_failure_state(&server.name) {
+					if let Err(e) = process::reset_server_failure_state(server.name()) {
 						crate::log_debug!(
 							"Failed to reset failure state for server '{}': {}",
-							server.name,
+							server.name(),
 							e
 						);
 					}
@@ -218,7 +220,7 @@ async fn check_server_health_and_restart_if_dead(
 			if !verify_server_responsiveness(server).await {
 				crate::log_debug!(
 					"Health monitor: server '{}' process is running but not responsive (this is normal for failed requests)",
-					server.name
+					server.name()
 				);
 				// Don't mark as dead - failed responses are normal
 				// Only mark as dead if the actual process is not running
@@ -228,7 +230,7 @@ async fn check_server_health_and_restart_if_dead(
 			// Server is currently restarting, just monitor
 			crate::log_debug!(
 				"Health monitor: server '{}' is currently restarting",
-				server.name
+				server.name()
 			);
 		}
 	}
@@ -240,21 +242,21 @@ async fn check_server_health_and_restart_if_dead(
 async fn restart_dead_server(server: &McpServerConfig) -> Result<(), anyhow::Error> {
 	crate::log_debug!(
 		"Health monitor attempting to restart dead server '{}'",
-		server.name
+		server.name()
 	);
 
 	match process::ensure_server_running(server).await {
 		Ok(_) => {
 			crate::log_info!(
 				"Health monitor successfully restarted dead server '{}'",
-				server.name
+				server.name()
 			);
 			Ok(())
 		}
 		Err(e) => {
 			crate::log_debug!(
 				"Health monitor failed to restart dead server '{}': {}",
-				server.name,
+				server.name(),
 				e
 			);
 			Err(e)
@@ -269,16 +271,16 @@ async fn verify_server_responsiveness(server: &McpServerConfig) -> bool {
 	// BUT: Failed responses are normal due to misled requests
 	// We should only check if the PROCESS is alive, not if it responds correctly
 
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Stdin => {
 			// For stdin servers, just check if the process is alive
 			// Don't try to communicate - that might fail due to misled requests
-			process::is_server_running(&server.name)
+			process::is_server_running(server.name())
 		}
 		McpConnectionType::Http => {
 			// For HTTP servers, just check if the process is running
 			// Don't make HTTP requests - failed responses are normal
-			process::is_server_running(&server.name)
+			process::is_server_running(server.name())
 		}
 		McpConnectionType::Builtin => {
 			// Built-in servers are always "running"
@@ -302,7 +304,7 @@ pub async fn force_health_check(config: &Config) -> Result<(), anyhow::Error> {
 		.iter()
 		.filter(|server| {
 			matches!(
-				server.connection_type,
+				server.connection_type(),
 				McpConnectionType::Http | McpConnectionType::Stdin
 			)
 		})
@@ -313,7 +315,7 @@ pub async fn force_health_check(config: &Config) -> Result<(), anyhow::Error> {
 		if let Err(e) = check_server_health_and_restart_if_dead(server).await {
 			crate::log_debug!(
 				"Force health check error for server '{}': {}",
-				server.name,
+				server.name(),
 				e
 			);
 		}

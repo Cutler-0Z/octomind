@@ -388,12 +388,7 @@ tools = []
 		// Test get_merged_config_for_mode for custom role
 		let merged_config = config.get_merged_config_for_role("tester");
 		// The merged config should only include servers that are referenced by the tester role
-		let server_names: Vec<&str> = merged_config
-			.mcp
-			.servers
-			.iter()
-			.map(|s| s.name.as_str())
-			.collect();
+		let server_names: Vec<&str> = merged_config.mcp.servers.iter().map(|s| s.name()).collect();
 		assert!(server_names.contains(&"octocode"));
 		assert!(server_names.contains(&"clt"));
 		// Should not contain servers not referenced by the tester role
@@ -412,12 +407,7 @@ tools = []
 		// Test that the merged config for tester role only includes the specified servers
 		let merged_config = config.get_merged_config_for_role("tester");
 		// The merged config should only have servers that are in the tester role's server_refs
-		let server_names: Vec<&str> = merged_config
-			.mcp
-			.servers
-			.iter()
-			.map(|s| s.name.as_str())
-			.collect();
+		let server_names: Vec<&str> = merged_config.mcp.servers.iter().map(|s| s.name()).collect();
 		assert!(server_names.contains(&"octocode"));
 		assert!(server_names.contains(&"clt"));
 		assert!(!server_names.contains(&"developer")); // Should not be included

@@ -169,12 +169,46 @@ impl McpConfig {
 		servers: std::collections::HashMap<String, McpServerConfig>,
 		allowed_tools: Option<Vec<String>>,
 	) -> Self {
-		// Convert HashMap to Vec, setting names from keys
+		// Convert HashMap to Vec, ensuring names match keys
 		let servers_vec: Vec<McpServerConfig> = servers
 			.into_iter()
-			.map(|(name, mut server)| {
-				server.name = name;
-				server
+			.map(|(name, server)| {
+				// Recreate server with correct name if it doesn't match
+				match server {
+					McpServerConfig::Builtin {
+						timeout_seconds,
+						tools,
+						..
+					} => McpServerConfig::Builtin {
+						name,
+						timeout_seconds,
+						tools,
+					},
+					McpServerConfig::Http {
+						connection,
+						timeout_seconds,
+						tools,
+						..
+					} => McpServerConfig::Http {
+						name,
+						connection,
+						timeout_seconds,
+						tools,
+					},
+					McpServerConfig::Stdin {
+						command,
+						args,
+						timeout_seconds,
+						tools,
+						..
+					} => McpServerConfig::Stdin {
+						name,
+						command,
+						args,
+						timeout_seconds,
+						tools,
+					},
+				}
 			})
 			.collect();
 
@@ -199,7 +233,7 @@ impl Config {
 		self.mcp
 			.servers
 			.iter()
-			.find(|s| s.name == server_name)
+			.find(|s| s.name() == server_name)
 			.cloned()
 	}
 
@@ -295,7 +329,7 @@ impl Config {
 		);
 
 		for server in &enabled_servers {
-			crate::log_debug!("TRACE: Adding server '{}' to merged config", server.name);
+			crate::log_debug!("TRACE: Adding server '{}' to merged config", server.name());
 		}
 
 		merged.mcp = McpConfig {

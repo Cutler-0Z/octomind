@@ -109,37 +109,37 @@ impl Config {
 	fn validate_mcp_config(&self) -> Result<()> {
 		// Validate server configurations
 		for server_config in &self.mcp.servers {
-			let server_name = &server_config.name;
+			let server_name = &server_config.name();
 			// Validate timeout
-			if server_config.timeout_seconds == 0 {
+			if server_config.timeout_seconds() == 0 {
 				return Err(anyhow!(
 					"Server '{}' has invalid timeout: 0. Must be greater than 0",
 					server_name
 				));
 			}
 
-			if server_config.timeout_seconds > 3600 {
+			if server_config.timeout_seconds() > 3600 {
 				// 1 hour max
 				return Err(anyhow!(
 					"Server '{}' timeout too high: {} seconds. Maximum allowed: 3600 (1 hour)",
 					server_name,
-					server_config.timeout_seconds
+					server_config.timeout_seconds()
 				));
 			}
 
 			// Validate external server configuration
 			if matches!(
-				server_config.connection_type,
+				server_config.connection_type(),
 				crate::config::McpConnectionType::Http
 			) {
-				if server_config.url.is_none() && server_config.command.is_none() {
+				if server_config.url().is_none() && server_config.command().is_none() {
 					return Err(anyhow!(
 						"External server '{}' must have either 'url' or 'command' specified",
 						server_name
 					));
 				}
 
-				if server_config.url.is_some() && server_config.command.is_some() {
+				if server_config.url().is_some() && server_config.command().is_some() {
 					return Err(anyhow!(
 						"External server '{}' cannot have both 'url' and 'command' specified",
 						server_name

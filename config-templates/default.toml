@@ -424,28 +424,24 @@ allowed_tools = []
 name = "developer"
 type = "builtin"
 timeout_seconds = 30
-args = []
 tools = []
 
 [[mcp.servers]]
 name = "agent"
 type = "builtin"
 timeout_seconds = 30
-args = []
 tools = []
 
 [[mcp.servers]]
 name = "filesystem"
 type = "builtin"
 timeout_seconds = 30
-args = []
 tools = []
 
 [[mcp.servers]]
 name = "web"
 type = "builtin"
 timeout_seconds = 30
-args = []
 tools = []
 
 [[mcp.servers]]
@@ -456,11 +452,21 @@ args = ["mcp", "--path=."]
 timeout_seconds = 240
 tools = []
 
-# Example external MCP server configuration:
+# Example remote HTTP MCP server configuration:
 # [[mcp.servers]]
-# name = "my_custom_server"
+# name = "my_remote_server"
 # type = "http"
 # url = "http://localhost:3000/mcp"
+# timeout_seconds = 30
+# auth_token = "optional-auth-token"
+# tools = []
+
+# Example local HTTP MCP server configuration:
+# [[mcp.servers]]
+# name = "my_local_server"
+# type = "http"
+# command = "python"
+# args = ["server.py", "--port", "8080"]
 # timeout_seconds = 30
 # auth_token = "optional-auth-token"
 # tools = []

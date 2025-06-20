@@ -15,7 +15,7 @@
 // MCP local server process manager
 
 use super::{McpFunction, McpToolCall, McpToolResult};
-use crate::config::{McpConnectionType, McpServerConfig};
+use crate::config::{HttpConnection, McpConnectionType, McpServerConfig};
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -207,7 +207,7 @@ fn cleanup_server_restart_mutex(server_id: &str) {
 // Start a local MCP server process if not already running - START ONCE approach
 // This function will only start servers that are truly not running
 pub async fn ensure_server_running(server: &McpServerConfig) -> Result<String> {
-	let server_id = &server.name;
+	let server_id = server.name();
 
 	// Use per-server mutex to prevent concurrent start attempts
 	let restart_mutex = get_server_restart_mutex(server_id);
@@ -224,7 +224,7 @@ pub async fn ensure_server_running(server: &McpServerConfig) -> Result<String> {
 
 // Simple function to start server once if it's truly not running
 async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String> {
-	let server_id = &server.name;
+	let server_id = server.name();
 
 	// Check if the server is already running and healthy
 	{
@@ -254,14 +254,14 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 				// Server is running and healthy - return URL without any restart attempts
 				{
 					let mut restart_info_guard = SERVER_RESTART_INFO.write().unwrap();
-					let info = restart_info_guard.entry(server_id.clone()).or_default();
+					let info = restart_info_guard.entry(server_id.to_string()).or_default();
 					info.health_status = ServerHealth::Running;
 					info.last_health_check = Some(SystemTime::now());
 				}
 
 				crate::log_debug!("Server '{}' is already running and healthy", server_id);
 
-				match server.connection_type {
+				match server.connection_type() {
 					McpConnectionType::Http => return get_server_url(server),
 					McpConnectionType::Stdin => return Ok("stdin://".to_string() + server_id),
 					McpConnectionType::Builtin => {
@@ -283,7 +283,7 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 				// Mark as dead
 				{
 					let mut restart_info_guard = SERVER_RESTART_INFO.write().unwrap();
-					let info = restart_info_guard.entry(server_id.clone()).or_default();
+					let info = restart_info_guard.entry(server_id.to_string()).or_default();
 					info.health_status = ServerHealth::Dead;
 				}
 			}
@@ -310,7 +310,7 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 			// Server started successfully - update health status
 			{
 				let mut restart_info_guard = SERVER_RESTART_INFO.write().unwrap();
-				let info = restart_info_guard.entry(server_id.clone()).or_default();
+				let info = restart_info_guard.entry(server_id.to_string()).or_default();
 				info.health_status = ServerHealth::Running;
 				info.restart_count += 1; // Track that we started it
 				info.last_restart_time = Some(SystemTime::now());
@@ -324,7 +324,7 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 			// Server failed to start - mark as failed but don't retry
 			{
 				let mut restart_info_guard = SERVER_RESTART_INFO.write().unwrap();
-				let info = restart_info_guard.entry(server_id.clone()).or_default();
+				let info = restart_info_guard.entry(server_id.to_string()).or_default();
 				info.health_status = ServerHealth::Failed;
 				info.consecutive_failures += 1;
 			}
@@ -343,20 +343,37 @@ async fn start_server_once_if_needed(server: &McpServerConfig) -> Result<String>
 // them from being killed when Ctrl+C is pressed. MCP servers should be long-running
 // and only terminate when the main program exits, not on session cancellation.
 async fn start_server_process(server: &McpServerConfig) -> Result<String> {
-	// Get command and args from config
-	let command = server.command.as_ref().ok_or_else(|| {
-		anyhow::anyhow!(
-			"Command not specified for local MCP server: {}",
-			server.name
-		)
-	})?;
+	// Get command and args from config based on server type
+	let (command, args) = match server {
+		McpServerConfig::Stdin { command, args, .. } => (command.as_str(), args.as_slice()),
+		McpServerConfig::Http {
+			connection: HttpConnection::Local { command, args, .. },
+			..
+		} => (command.as_str(), args.as_slice()),
+		McpServerConfig::Http {
+			connection: HttpConnection::Remote { url, .. },
+			..
+		} => {
+			return Err(anyhow::anyhow!(
+				"Remote HTTP server '{}' should not be started as local process (URL: {})",
+				server.name(),
+				url
+			));
+		}
+		McpServerConfig::Builtin { .. } => {
+			return Err(anyhow::anyhow!(
+				"Builtin server '{}' should not be started as external process",
+				server.name()
+			));
+		}
+	};
 
 	// Build and start the command
 	let mut cmd = Command::new(command);
 
 	// Add arguments if present
-	if !server.args.is_empty() {
-		cmd.args(&server.args);
+	if !args.is_empty() {
+		cmd.args(args);
 	}
 
 	// CRITICAL FIX: Isolate MCP server processes from parent process group
@@ -375,7 +392,7 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 	}
 
 	// Configure standard I/O based on connection type
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Http => {
 			// For HTTP mode, we pipe stdout/stderr but don't need stdin
 			cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -384,23 +401,23 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 			// Debug output
 			crate::log_debug!(
 				"🚀 Starting MCP server (HTTP mode, signal-isolated): {}",
-				server.name
+				server.name()
 			);
 			let child = cmd.spawn().map_err(|e| {
-				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name, e)
+				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name(), e)
 			})?;
 
 			// Add to the registry
 			{
 				let mut processes = SERVER_PROCESSES.write().unwrap();
 				processes.insert(
-					server.name.clone(),
+					server.name().to_string(),
 					Arc::new(Mutex::new(ServerProcess::Http(child))),
 				);
 			}
 
 			// Clear function cache for this server since it's restarting
-			crate::mcp::server::clear_function_cache_for_server(&server.name);
+			crate::mcp::server::clear_function_cache_for_server(server.name());
 
 			// Wait a moment to let the server start
 			let start_time = Instant::now();
@@ -416,14 +433,14 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 				if start_time.elapsed() > max_wait {
 					return Err(anyhow::anyhow!(
 						"Timed out waiting for MCP server to start: {}",
-						server.name
+						server.name()
 					));
 				}
 
 				// Try to connect to the server
 				if can_connect(&server_url).await {
 					// Debug output
-					crate::log_debug!("✅ MCP server started: {} at {}", server.name, server_url);
+					crate::log_debug!("✅ MCP server started: {} at {}", server.name(), server_url);
 					return Ok(server_url);
 				}
 
@@ -441,19 +458,19 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 			// Debug output
 			crate::log_debug!(
 				"🚀 Starting MCP server (stdin mode, signal-isolated): {}",
-				server.name
+				server.name()
 			);
 			let mut child = cmd.spawn().map_err(|e| {
-				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name, e)
+				anyhow::anyhow!("Failed to start MCP server '{}': {}", server.name(), e)
 			})?;
 
 			// Get the stdin/stdout handles
 			let child_stdin = child.stdin.take().ok_or_else(|| {
-				anyhow::anyhow!("Failed to open stdin for MCP server: {}", server.name)
+				anyhow::anyhow!("Failed to open stdin for MCP server: {}", server.name())
 			})?;
 
 			let child_stdout = child.stdout.take().ok_or_else(|| {
-				anyhow::anyhow!("Failed to open stdout for MCP server: {}", server.name)
+				anyhow::anyhow!("Failed to open stdout for MCP server: {}", server.name())
 			})?;
 
 			// Create buffered reader/writer
@@ -472,50 +489,54 @@ async fn start_server_process(server: &McpServerConfig) -> Result<String> {
 			// Add to the registry
 			{
 				let mut processes = SERVER_PROCESSES.write().unwrap();
-				processes.insert(server.name.clone(), Arc::new(Mutex::new(server_process)));
+				processes.insert(
+					server.name().to_string(),
+					Arc::new(Mutex::new(server_process)),
+				);
 			}
 
 			// Clear function cache for this server since it's restarting
-			crate::mcp::server::clear_function_cache_for_server(&server.name);
+			crate::mcp::server::clear_function_cache_for_server(server.name());
 
 			// Initialize the server by sending the initialize request, following the MCP protocol
 			// This also verifies the server is responsive
 			let _process_arc = {
 				let processes = SERVER_PROCESSES.read().unwrap();
-				processes.get(&server.name).cloned().ok_or_else(|| {
-					anyhow::anyhow!("Server not found right after creation: {}", server.name)
+				processes.get(server.name()).cloned().ok_or_else(|| {
+					anyhow::anyhow!("Server not found right after creation: {}", server.name())
 				})?
 			};
 
 			// Initialize the server following the MCP protocol
-			let init_result = initialize_stdin_server(&server.name).await;
+			let init_result = initialize_stdin_server(server.name()).await;
 
 			if let Err(e) = &init_result {
 				eprintln!(
 					"Failed to initialize stdin MCP server '{}': {}",
-					server.name, e
+					server.name(),
+					e
 				);
 
 				// Use the proper cleanup function to kill the process
-				if let Err(cleanup_err) = cleanup_server_process(&server.name) {
+				if let Err(cleanup_err) = cleanup_server_process(server.name()) {
 					crate::log_debug!(
 						"Failed to cleanup server '{}' after init failure: {}",
-						server.name,
+						server.name(),
 						cleanup_err
 					);
 				}
 
 				return Err(anyhow::anyhow!(
 					"Failed to initialize stdin MCP server '{}': {}",
-					server.name,
+					server.name(),
 					e
 				));
 			}
 
 			// Return a pseudo-URL for stdin-based servers
-			let stdin_url = format!("stdin://{}", server.name);
+			let stdin_url = format!("stdin://{}", server.name());
 			// Debug output
-			// println!("MCP server started and initialized (stdin mode): {} at {}", server.name, stdin_url);
+			// println!("MCP server started and initialized (stdin mode): {} at {}", server.name(), stdin_url);
 			Ok(stdin_url)
 		}
 		McpConnectionType::Builtin => Err(anyhow::anyhow!(
@@ -590,14 +611,14 @@ async fn can_connect(url: &str) -> bool {
 
 // Get the URL for a server based on configuration
 fn get_server_url(server: &McpServerConfig) -> Result<String> {
-	// If URL is explicitly specified, use that
-	if let Some(url) = &server.url {
-		return Ok(url.to_string()); // Convert &str to String without unnecessary clone
+	// Check if URL is explicitly specified (remote HTTP server)
+	if let Some(url) = server.url() {
+		return Ok(url.to_string());
 	}
 
 	// For stdin-based servers, return a pseudo-URL
-	if let McpConnectionType::Stdin = server.connection_type {
-		return Ok(format!("stdin://{}", server.name));
+	if let McpConnectionType::Stdin = server.connection_type() {
+		return Ok(format!("stdin://{}", server.name()));
 	}
 
 	// Otherwise, assume it's running on localhost
@@ -870,7 +891,7 @@ pub async fn get_stdin_server_functions(server: &McpServerConfig) -> Result<Vec<
 
 	// Try to get tool information from the server with a timeout
 	// Pass the same ID that's in the message (1) and no cancellation token for initialization
-	let response = communicate_with_stdin_server(&server.name, &message, 1, None).await?;
+	let response = communicate_with_stdin_server(server.name(), &message, 1, None).await?;
 
 	// Extract functions from the response
 	let mut functions = Vec::new();
@@ -896,8 +917,8 @@ pub async fn get_stdin_server_functions(server: &McpServerConfig) -> Result<Vec<
 					tool.get("description").and_then(|d| d.as_str()),
 				) {
 					// Check if this tool is enabled
-					if server.tools.is_empty()
-						|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+					if server.tools().is_empty()
+						|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
 					{
 						// Get parameters from inputSchema if available, otherwise use empty object
 						let parameters = tool.get("inputSchema").cloned().unwrap_or(json!({}));
@@ -943,10 +964,10 @@ pub async fn execute_stdin_tool_call(
 
 	// Execute the tool call with request ID 1 and cancellation support
 	let response = match communicate_with_stdin_server_extended_timeout(
-		&server.name,
+		server.name(),
 		&message,
 		1,
-		server.timeout_seconds,
+		server.timeout_seconds(),
 		cancellation_token,
 	)
 	.await

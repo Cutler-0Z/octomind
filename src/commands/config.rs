@@ -211,9 +211,8 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 		config.mcp.servers.clear();
 		for server_name in &server_names {
 			// Create basic server config if not exists
-			if !config.mcp.servers.iter().any(|s| s.name == *server_name) {
-				let mut server = McpServerConfig::from_name(server_name);
-				server.name = server_name.clone();
+			if !config.mcp.servers.iter().any(|s| s.name() == *server_name) {
+				let server = McpServerConfig::builtin(server_name, 30, Vec::new());
 				config.mcp.servers.push(server);
 			}
 		}
@@ -232,17 +231,13 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 		} else {
 			let name = parts[0].trim().to_string();
 
-			// Create a new server config
-			let mut server = McpServerConfig {
-				name: name.clone(),
-				connection_type: McpConnectionType::Http, // Default to HTTP
-				url: None,
-				command: None,
-				args: Vec::new(),
-				auth_token: None,
-				tools: Vec::new(),
-				timeout_seconds: 30, // Default timeout
-			};
+			// Create a new server config - start with default values
+			let mut url: Option<String> = None;
+			let mut command: Option<String> = None;
+			let mut args: Vec<String> = Vec::new();
+			let mut auth_token: Option<String> = None;
+			let mut timeout_seconds: u64 = 30;
+			let mut connection_type = McpConnectionType::Http; // Default to HTTP
 
 			// Process remaining parts
 			for part in &parts[1..] {
@@ -253,30 +248,30 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 
 					match key {
 						"url" => {
-							server.url = Some(value.to_string());
+							url = Some(value.to_string());
 						}
 						"command" => {
-							server.command = Some(value.to_string());
+							command = Some(value.to_string());
 						}
 						"args" => {
-							server.args = value
+							args = value
 								.split(' ')
 								.map(|s| s.trim().to_string())
 								.filter(|s| !s.is_empty())
 								.collect();
 						}
 						"token" | "auth_token" => {
-							server.auth_token = Some(value.to_string());
+							auth_token = Some(value.to_string());
 						}
 						"type" => match value.to_lowercase().as_str() {
-							"http" => server.connection_type = McpConnectionType::Http,
-							"stdin" => server.connection_type = McpConnectionType::Stdin,
-							"builtin" => server.connection_type = McpConnectionType::Builtin,
+							"http" => connection_type = McpConnectionType::Http,
+							"stdin" => connection_type = McpConnectionType::Stdin,
+							"builtin" => connection_type = McpConnectionType::Builtin,
 							_ => println!("Unknown server type: {}, defaulting to HTTP", value),
 						},
 						"timeout" | "timeout_seconds" => {
 							if let Ok(timeout) = value.parse::<u64>() {
-								server.timeout_seconds = timeout;
+								timeout_seconds = timeout;
 							} else {
 								println!("Invalid timeout value: {}, using default", value);
 							}
@@ -288,27 +283,55 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 				}
 			}
 
-			// Validate the server config
-			match server.connection_type {
-				McpConnectionType::Http | McpConnectionType::Stdin => {
-					if server.url.is_none() && server.command.is_none() {
-						println!("Error: Either url or command must be specified for external MCP server");
+			// Create the appropriate server configuration based on the collected data
+			let server = match connection_type {
+				McpConnectionType::Builtin => {
+					McpServerConfig::builtin(&name, timeout_seconds, Vec::new())
+				}
+				McpConnectionType::Http => {
+					if let Some(url) = url {
+						// Remote HTTP server
+						McpServerConfig::remote_http(
+							&name,
+							&url,
+							timeout_seconds,
+							Vec::new(),
+							auth_token,
+						)
+					} else if let Some(command) = command {
+						// Local HTTP server
+						McpServerConfig::local_http(
+							&name,
+							&command,
+							args,
+							timeout_seconds,
+							Vec::new(),
+							auth_token,
+						)
+					} else {
+						println!(
+							"Error: Either url or command must be specified for HTTP MCP server"
+						);
 						return Ok(());
 					}
 				}
-				McpConnectionType::Builtin => {
-					// Built-in servers are always valid
+				McpConnectionType::Stdin => {
+					if let Some(command) = command {
+						McpServerConfig::stdin(&name, &command, args, timeout_seconds, Vec::new())
+					} else {
+						println!("Error: Command must be specified for stdin MCP server");
+						return Ok(());
+					}
 				}
-			}
+			};
 
 			// Enable MCP if not already enabled - REMOVED: MCP now controlled by server_refs
 			// The presence of servers in the registry doesn't automatically enable MCP
 
 			// Add the new server to registry
 			// Remove existing server with same name first
-			config.mcp.servers.retain(|s| s.name != name);
-			// Set the name and add the server
-			server.name = name.clone();
+			config.mcp.servers.retain(|s| s.name() != name);
+			// Add the server (name is already set during creation)
 			config.mcp.servers.push(server);
 
 			println!("Added/updated MCP server: {}", name);
@@ -411,18 +434,18 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 		if !config.mcp.servers.is_empty() {
 			println!("MCP servers:");
 			for server in &config.mcp.servers {
-				let name = &server.name;
+				let name = server.name();
 				// Note: enabled status is now determined by role server_refs, not individual server config
 				// Here we just show what's available in the registry
 
 				// Auto-detect server type for display
-				let effective_type = match name.as_str() {
+				let effective_type = match name {
 					"developer" | "filesystem" | "agent" => McpConnectionType::Builtin,
-					_ => server.connection_type,
+					_ => server.connection_type(),
 				};
 
 				match effective_type {
-					McpConnectionType::Builtin => match name.as_str() {
+					McpConnectionType::Builtin => match name {
 						"developer" => {
 							println!("  - {} (built-in developer tools) - available", name)
 						}
@@ -450,9 +473,9 @@ pub fn execute(args: &ConfigArgs, mut config: Config) -> Result<(), anyhow::Erro
 									name
 								);
 							}
-						} else if let Some(url) = &server.url {
+						} else if let Some(url) = server.url() {
 							println!("  - {} (HTTP: {}) - available", name, url);
-						} else if let Some(command) = &server.command {
+						} else if let Some(command) = server.command() {
 							println!("  - {} (Command: {}) - available", name, command);
 						} else {
 							println!(
@@ -728,17 +751,17 @@ fn show_mcp_servers(servers: &Vec<McpServerConfig>) {
 
 	println!("    Servers:");
 	for server in servers {
-		let name = &server.name;
+		let name = server.name();
 		// Note: Individual servers no longer have enabled flag - determined by role server_refs
 
 		// Auto-detect server type for display
-		let effective_type = match name.as_str() {
+		let effective_type = match name {
 			"developer" | "filesystem" | "agent" => McpConnectionType::Builtin,
-			_ => server.connection_type,
+			_ => server.connection_type(),
 		};
 
 		match effective_type {
-			McpConnectionType::Builtin => match name.as_str() {
+			McpConnectionType::Builtin => match name {
 				"developer" => println!("      📦 {} (built-in developer tools)", name),
 				"filesystem" => println!("      📂 {} (built-in filesystem tools)", name),
 				"agent" => println!("      🤖 {} (built-in agent tool)", name),
@@ -758,9 +781,9 @@ fn show_mcp_servers(servers: &Vec<McpServerConfig>) {
 					} else {
 						println!("      🔍 {} (binary not found in PATH)", name);
 					}
-				} else if let Some(url) = &server.url {
+				} else if let Some(url) = server.url() {
 					println!("      🌐 {} (HTTP: {})", name, url);
-				} else if let Some(command) = &server.command {
+				} else if let Some(command) = server.command() {
 					println!("      ⚙️  {} (Command: {})", name, command);
 				} else {
 					println!("      ❓ {} (external, not configured)", name);
@@ -769,11 +792,11 @@ fn show_mcp_servers(servers: &Vec<McpServerConfig>) {
 		}
 
 		// Show additional server details if configured
-		if server.timeout_seconds != 30 {
-			println!("        Timeout: {} seconds", server.timeout_seconds);
+		if server.timeout_seconds() != 30 {
+			println!("        Timeout: {} seconds", server.timeout_seconds());
 		}
-		if !server.tools.is_empty() {
-			println!("        Tools: {}", server.tools.join(", "));
+		if !server.tools().is_empty() {
+			println!("        Tools: {}", server.tools().join(", "));
 		}
 	}
 }

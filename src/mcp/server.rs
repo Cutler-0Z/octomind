@@ -37,7 +37,7 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 	// All servers in the registry are considered available
 
 	// Handle different server connection types
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Http => {
 			// Handle local vs remote servers
 			let server_url = get_server_base_url(server).await?;
@@ -50,7 +50,7 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 			headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
 			// Add auth token if present
-			if let Some(token) = &server.auth_token {
+			if let Some(token) = server.auth_token() {
 				headers.insert(
 					AUTHORIZATION,
 					HeaderValue::from_str(&format!("Bearer {}", token))?,
@@ -92,8 +92,8 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 							func.get("description").and_then(|d| d.as_str()),
 						) {
 							// Check if this tool is enabled
-							if server.tools.is_empty()
-								|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+							if server.tools().is_empty()
+								|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
 							{
 								// Get the parameters from the inputSchema field if available
 								let parameters =
@@ -117,8 +117,8 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 							func.get("description").and_then(|d| d.as_str()),
 						) {
 							// Check if this tool is enabled
-							if server.tools.is_empty()
-								|| crate::mcp::is_tool_allowed_by_patterns(name, &server.tools)
+							if server.tools().is_empty()
+								|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
 							{
 								// Get the parameters from the inputSchema field if available
 								let parameters =
@@ -153,7 +153,7 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 
 // Get server function definitions WITHOUT making JSON-RPC calls (optimized for system prompt generation)
 pub async fn get_server_functions_cached(server: &McpServerConfig) -> Result<Vec<McpFunction>> {
-	let server_id = &server.name;
+	let server_id = server.name();
 
 	// First, check if we have cached functions
 	{
@@ -178,7 +178,7 @@ pub async fn get_server_functions_cached(server: &McpServerConfig) -> Result<Vec
 				// Cache the functions (no expiration - only cleared on server restart)
 				{
 					let mut cache = FUNCTION_CACHE.write().unwrap();
-					cache.insert(server_id.clone(), functions.clone());
+					cache.insert(server_id.to_string(), functions.clone());
 				}
 				crate::log_debug!(
 					"Cached {} functions for server '{}'",
@@ -209,16 +209,17 @@ pub async fn get_server_functions_cached(server: &McpServerConfig) -> Result<Vec
 
 // Helper function to get fallback functions when server is not running
 fn get_fallback_functions(server: &McpServerConfig) -> Result<Vec<McpFunction>> {
-	if !server.tools.is_empty() {
+	if !server.tools().is_empty() {
 		// Return lightweight function entries based on configuration
 		Ok(server
-			.tools
+			.tools()
 			.iter()
 			.map(|tool_name| McpFunction {
 				name: tool_name.clone(),
 				description: format!(
 					"External tool '{}' from server '{}' (server not started)",
-					tool_name, server.name
+					tool_name,
+					server.name()
 				),
 				parameters: serde_json::json!({}),
 			})
@@ -285,12 +286,14 @@ pub fn clear_all_function_cache() {
 // Check if a server is already running with enhanced health checking
 // Takes server config to properly handle internal vs external servers
 pub fn is_server_already_running_with_config(server: &crate::config::McpServerConfig) -> bool {
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Builtin => {
 			// Internal servers are always considered running since they're built-in
 			{
 				let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
-				let info = restart_info_guard.entry(server.name.clone()).or_default();
+				let info = restart_info_guard
+					.entry(server.name().to_string())
+					.or_default();
 				info.health_status = process::ServerHealth::Running;
 				info.last_health_check = Some(std::time::SystemTime::now());
 			}
@@ -300,7 +303,7 @@ pub fn is_server_already_running_with_config(server: &crate::config::McpServerCo
 			// External servers - check the process registry
 			let is_process_running = {
 				let processes = process::SERVER_PROCESSES.read().unwrap();
-				if let Some(process_arc) = processes.get(&server.name) {
+				if let Some(process_arc) = processes.get(server.name()) {
 					let mut process = process_arc.lock().unwrap();
 					match &mut *process {
 						process::ServerProcess::Http(child) => child
@@ -334,7 +337,9 @@ pub fn is_server_already_running_with_config(server: &crate::config::McpServerCo
 			// Update restart tracking
 			{
 				let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
-				let info = restart_info_guard.entry(server.name.clone()).or_default();
+				let info = restart_info_guard
+					.entry(server.name().to_string())
+					.or_default();
 				info.health_status = health_status;
 				info.last_health_check = Some(std::time::SystemTime::now());
 			}
@@ -425,25 +430,25 @@ pub async fn execute_tool_call(
 	}
 
 	// Check server health before attempting execution (but don't restart)
-	let server_health = process::get_server_health(&server.name);
+	let server_health = process::get_server_health(server.name());
 	match server_health {
 		process::ServerHealth::Failed => {
 			return Err(anyhow::anyhow!(
 				"Server '{}' is in failed state. Cannot execute tool '{}'. Server will not be restarted automatically.",
-				server.name,
+				server.name(),
 				call.tool_name
 			));
 		}
 		process::ServerHealth::Restarting => {
 			return Err(anyhow::anyhow!(
 				"Server '{}' is currently starting. Please try again in a moment.",
-				server.name
+				server.name()
 			));
 		}
 		process::ServerHealth::Dead => {
 			return Err(anyhow::anyhow!(
 				"Server '{}' is not running. Cannot execute tool '{}'. Server will not be restarted automatically.",
-				server.name,
+				server.name(),
 				call.tool_name
 			));
 		}
@@ -481,7 +486,7 @@ async fn execute_tool_call_internal(
 	// Tool execution display is now handled in response.rs to avoid duplication
 
 	// Handle different server connection types
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Http => {
 			// Check for cancellation before HTTP request
 			if let Some(ref token) = cancellation_token {
@@ -495,7 +500,7 @@ async fn execute_tool_call_internal(
 
 			// Create a client with configured timeout
 			let client = Client::builder()
-				.timeout(std::time::Duration::from_secs(server.timeout_seconds))
+				.timeout(std::time::Duration::from_secs(server.timeout_seconds()))
 				.build()
 				.unwrap_or_else(|_| Client::new());
 
@@ -504,7 +509,7 @@ async fn execute_tool_call_internal(
 			headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
 			// Add auth token if present
-			if let Some(token) = &server.auth_token {
+			if let Some(token) = server.auth_token() {
 				headers.insert(
 					AUTHORIZATION,
 					HeaderValue::from_str(&format!("Bearer {}", token))?,
@@ -585,27 +590,27 @@ async fn execute_tool_call_internal(
 
 // Get the base URL for a server, starting it if necessary for local servers
 async fn get_server_base_url(server: &McpServerConfig) -> Result<String> {
-	match server.connection_type {
+	match server.connection_type() {
 		McpConnectionType::Http => {
 			// Check if this is a local server that needs to be started
-			if server.command.is_some() {
+			if server.command().is_some() {
 				// This is a local server, ensure it's running
 				process::ensure_server_running(server).await
-			} else if let Some(url) = &server.url {
+			} else if let Some(url) = server.url() {
 				// This is a remote server with a URL
 				Ok(url.trim_end_matches("/").to_string())
 			} else {
 				// Neither remote nor local configuration
-				Err(anyhow::anyhow!("Invalid server configuration: neither URL nor command specified for server '{}'", server.name))
+				Err(anyhow::anyhow!("Invalid server configuration: neither URL nor command specified for server '{}'", server.name()))
 			}
 		}
 		McpConnectionType::Stdin => {
 			// For stdin-based servers, return a pseudo-URL
-			if server.command.is_some() {
+			if server.command().is_some() {
 				// Ensure the stdin server is running
 				process::ensure_server_running(server).await
 			} else {
-				Err(anyhow::anyhow!("Invalid server configuration: command not specified for stdin-based server '{}'", server.name))
+				Err(anyhow::anyhow!("Invalid server configuration: command not specified for stdin-based server '{}'", server.name()))
 			}
 		}
 		McpConnectionType::Builtin => {

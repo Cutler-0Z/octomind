@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Config;
+use crate::config::{Config, McpServerConfig};
 use crate::session::{ProviderExchange, Session, TokenUsage};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -277,7 +277,7 @@ impl LayerConfig {
 					.mcp
 					.servers
 					.iter()
-					.find(|s| s.name == *server_name)
+					.find(|s| s.name() == *server_name)
 					.cloned();
 
 				if let Some(mut server) = server_config {
@@ -285,7 +285,43 @@ impl LayerConfig {
 					// Apply layer-specific tool filtering if specified
 					if !self.mcp.allowed_tools.is_empty() {
 						// Convert patterns to actual tool names for this server
-						server.tools = self.mcp.expand_patterns_for_server(server_name);
+						let filtered_tools = self.mcp.expand_patterns_for_server(server_name);
+						// Recreate server with filtered tools
+						server = match server {
+							McpServerConfig::Builtin {
+								name,
+								timeout_seconds,
+								..
+							} => McpServerConfig::Builtin {
+								name,
+								timeout_seconds,
+								tools: filtered_tools,
+							},
+							McpServerConfig::Http {
+								name,
+								connection,
+								timeout_seconds,
+								..
+							} => McpServerConfig::Http {
+								name,
+								connection,
+								timeout_seconds,
+								tools: filtered_tools,
+							},
+							McpServerConfig::Stdin {
+								name,
+								command,
+								args,
+								timeout_seconds,
+								..
+							} => McpServerConfig::Stdin {
+								name,
+								command,
+								args,
+								timeout_seconds,
+								tools: filtered_tools,
+							},
+						};
 					}
 					layer_servers.push(server);
 				}

@@ -85,7 +85,7 @@ pub async fn get_tool_server_name_async(tool_name: &str, config: &Config) -> Str
 	let tool_server_map = crate::mcp::build_tool_server_map(config).await;
 
 	if let Some(target_server) = tool_server_map.get(tool_name) {
-		target_server.name.clone()
+		target_server.name().to_string()
 	} else {
 		// Return "unknown" if no server found instead of guessing
 		"unknown".to_string()

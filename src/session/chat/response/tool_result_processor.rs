@@ -112,21 +112,6 @@ pub async fn process_tool_results(
 			config,
 		)?;
 
-		// CRITICAL FIX: Check auto-cache threshold IMMEDIATELY after EACH tool result
-		// This ensures proper 2-marker logic and threshold checking after each tool
-		let tool_message_index = chat_session.session.messages.len() - 1;
-		let cache_start = std::time::Instant::now();
-		if let Ok(true) = cache_manager.check_and_apply_auto_cache_threshold_on_tool_result(
-			&mut chat_session.session,
-			config,
-			supports_caching,
-			tool_message_index,
-			role,
-		) {
-			log_info!("{}", format!("Auto-cache threshold reached after tool result '{}' - cache checkpoint applied before next API request.", tool_result.tool_name));
-		}
-		cache_check_time += cache_start.elapsed().as_millis();
-
 		// Check truncation only for large individual tool outputs (file contents, search results, etc.)
 		if is_large_output {
 			let tool_truncate_cancelled = Arc::new(AtomicBool::new(false));
@@ -185,6 +170,20 @@ pub async fn process_tool_results(
 		);
 	}
 	truncation_time += final_truncation_start.elapsed().as_millis();
+
+	// CRITICAL FIX: Check cache threshold AFTER all tool results are processed
+	// This ensures cache markers are set at the correct boundary - after all parallel
+	// tool results are added to session, but before sending the complete batch to server
+	let cache_start = std::time::Instant::now();
+	if let Ok(true) = cache_manager.check_and_apply_auto_cache_threshold(
+		&mut chat_session.session,
+		config,
+		supports_caching,
+		role,
+	) {
+		log_info!("Auto-cache threshold reached after processing all tool results - cache checkpoint applied before follow-up API request.");
+	}
+	cache_check_time += cache_start.elapsed().as_millis();
 
 	// 🔍 PERFORMANCE DEBUG: Report processing breakdown and track processing time
 	let total_processing_time = processing_start.elapsed().as_millis() as u64;

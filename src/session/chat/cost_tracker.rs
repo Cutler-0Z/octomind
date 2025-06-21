@@ -111,6 +111,9 @@ impl CostTracker {
 			);
 		}
 
+		// Show cost breakdown
+		Self::display_cost_breakdown(chat_session);
+
 		// Show time information if available
 		let total_time_ms = chat_session.session.info.total_api_time_ms
 			+ chat_session.session.info.total_tool_time_ms
@@ -126,5 +129,93 @@ impl CostTracker {
 		}
 
 		println!();
+	}
+
+	/// Display detailed cost breakdown
+	fn display_cost_breakdown(chat_session: &ChatSession) {
+		use crate::log_info;
+
+		let total_cost = chat_session.session.info.total_cost;
+		if total_cost <= 0.0 {
+			return; // No cost to break down
+		}
+
+		let cached = chat_session.session.info.cached_tokens;
+		let non_cached_prompt = chat_session.session.info.input_tokens;
+		let completion = chat_session.session.info.output_tokens;
+		let total_tokens = non_cached_prompt + cached + completion;
+
+		if total_tokens == 0 {
+			return; // Avoid division by zero
+		}
+
+		// Estimate cost breakdown based on typical pricing patterns
+		// Most providers charge more for output tokens than input tokens
+		// Cached tokens are typically free or heavily discounted
+		let estimated_input_cost = if non_cached_prompt > 0 {
+			// Estimate input cost as proportional to tokens, assuming typical 1:3 input:output ratio
+			let input_weight = 1.0;
+			let output_weight = 3.0; // Output tokens typically cost 3x more
+			let total_weighted =
+				(non_cached_prompt as f64 * input_weight) + (completion as f64 * output_weight);
+			if total_weighted > 0.0 {
+				total_cost * (non_cached_prompt as f64 * input_weight) / total_weighted
+			} else {
+				0.0
+			}
+		} else {
+			0.0
+		};
+
+		let estimated_output_cost = total_cost - estimated_input_cost;
+		let cached_savings = if cached > 0 {
+			// Estimate savings from cached tokens (assuming they would cost same as input tokens)
+			let input_weight = 1.0;
+			let output_weight = 3.0;
+			let total_weighted =
+				(non_cached_prompt as f64 * input_weight) + (completion as f64 * output_weight);
+			if total_weighted > 0.0 && non_cached_prompt > 0 {
+				let estimated_input_rate = estimated_input_cost / non_cached_prompt as f64;
+				cached as f64 * estimated_input_rate
+			} else {
+				0.0
+			}
+		} else {
+			0.0
+		};
+
+		// Display cost breakdown
+		if non_cached_prompt > 0 && completion > 0 {
+			log_info!(
+				"cost: ${:.5} total (input: ${:.5}, output: ${:.5}{})",
+				total_cost,
+				estimated_input_cost,
+				estimated_output_cost,
+				if cached_savings > 0.0 {
+					format!(", saved: ${:.5}", cached_savings)
+				} else {
+					String::new()
+				}
+			);
+		} else if non_cached_prompt > 0 {
+			log_info!(
+				"cost: ${:.5} total (input: ${:.5}{})",
+				total_cost,
+				total_cost,
+				if cached_savings > 0.0 {
+					format!(", saved: ${:.5}", cached_savings)
+				} else {
+					String::new()
+				}
+			);
+		} else if completion > 0 {
+			log_info!(
+				"cost: ${:.5} total (output: ${:.5})",
+				total_cost,
+				total_cost
+			);
+		} else {
+			log_info!("cost: ${:.5}", total_cost);
+		}
 	}
 }

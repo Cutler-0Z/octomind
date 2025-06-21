@@ -152,6 +152,7 @@ async fn get_command_version(command: &str) -> String {
 		"bash" => vec!["--version"],
 		"awk" => vec!["--version"],
 		"rg" | "ripgrep" => vec!["--version"],
+		"sg" | "ast-grep" => vec!["--version"],
 		"rustc" => vec!["--version"],
 		"php" => vec!["--version"],
 		"node" => vec!["--version"],

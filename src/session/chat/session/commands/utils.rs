@@ -17,15 +17,12 @@
 use crate::config::Config;
 
 // Helper function to get the actual server name for a tool using the same logic as execution
-pub async fn get_tool_server_name_async(tool_name: &str, config: &Config) -> String {
-	let tool_server_map = crate::mcp::build_tool_server_map(config).await;
-
-	if let Some(target_server) = tool_server_map.get(tool_name) {
-		target_server.name().to_string()
-	} else {
+pub async fn get_tool_server_name_async(tool_name: &str, _config: &Config) -> String {
+	// STATIC ONLY: Use pre-built static tool map
+	crate::mcp::tool_map::get_tool_server_name(tool_name).unwrap_or_else(|| {
 		// Fallback to category guess if no server found, but ensure we still show the tool
 		crate::mcp::guess_tool_category(tool_name).to_string()
-	}
+	})
 }
 
 // Format numbers with thousand separators

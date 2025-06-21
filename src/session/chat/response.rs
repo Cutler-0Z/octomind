@@ -80,16 +80,9 @@ fn handle_final_response(
 }
 
 // Get the actual server name for a tool (async version that matches execution)
-pub async fn get_tool_server_name_async(tool_name: &str, config: &Config) -> String {
-	// Use the SAME logic as execution - build the actual tool-to-server map
-	let tool_server_map = crate::mcp::build_tool_server_map(config).await;
-
-	if let Some(target_server) = tool_server_map.get(tool_name) {
-		target_server.name().to_string()
-	} else {
-		// Return "unknown" if no server found instead of guessing
-		"unknown".to_string()
-	}
+pub async fn get_tool_server_name_async(tool_name: &str, _config: &Config) -> String {
+	// STATIC ONLY: Use pre-built static tool map
+	crate::mcp::tool_map::get_tool_server_name(tool_name).unwrap_or_else(|| "unknown".to_string())
 }
 
 // Display execution intent with headers upfront (before execution)

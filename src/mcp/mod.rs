@@ -23,6 +23,9 @@ use std::io::Write;
 use std::sync::{Arc, RwLock};
 use uuid;
 
+// Modules
+pub mod tool_map;
+
 // Cache for internal server function definitions (static during session)
 lazy_static::lazy_static! {
 	static ref INTERNAL_FUNCTION_CACHE: Arc<RwLock<std::collections::HashMap<String, Vec<McpFunction>>>> =
@@ -602,8 +605,14 @@ async fn try_execute_tool_call(
 		}
 	}
 
-	// SIMPLE ROUTING: Build tool-to-server map and lookup
-	let tool_server_map = build_tool_server_map(config).await;
+	// STATIC ROUTING: Use pre-built tool map ONLY
+	let tool_server_map = {
+		let mut map = std::collections::HashMap::new();
+		if let Some(server) = tool_map::get_server_for_tool(&call.tool_name) {
+			map.insert(call.tool_name.clone(), server);
+		}
+		map
+	};
 
 	// Find the server that provides this tool
 	if let Some(target_server) = tool_server_map.get(&call.tool_name) {
@@ -779,17 +788,16 @@ async fn try_execute_tool_call(
 	}
 
 	// If we get here, tool was not found in any server
+	let available_tools = tool_map::get_all_tool_names();
 	Err(anyhow::anyhow!(
-		"Unknown tool '{}'. Available tools: {}",
+		"Tool '{}' not found in any configured MCP server. Available tools: {}",
 		call.tool_name,
-		get_available_tool_names(config).await.join(", ")
+		if available_tools.is_empty() {
+			"none (tool map not initialized)".to_string()
+		} else {
+			available_tools.join(", ")
+		}
 	))
-}
-
-// Helper function to get available tool names for error messages
-async fn get_available_tool_names(config: &crate::config::Config) -> Vec<String> {
-	let functions = get_available_functions(config).await;
-	functions.into_iter().map(|f| f.name).collect()
 }
 
 // Helper function to handle large response warnings

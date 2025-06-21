@@ -61,7 +61,7 @@ pub enum HttpConnection {
 }
 
 // Legacy connection type enum for backward compatibility in some functions
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum McpConnectionType {
 	Builtin,
 	Stdin,

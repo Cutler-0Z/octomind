@@ -31,6 +31,89 @@ lazy_static::lazy_static! {
 		Arc::new(RwLock::new(HashMap::new()));
 }
 
+// Shared JSON-RPC message builders for MCP protocol
+pub fn create_tools_list_request() -> Value {
+	json!({
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/list",
+		"params": {}
+	})
+}
+
+pub fn create_initialize_request() -> Value {
+	json!({
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "initialize",
+		"params": {
+			"protocolVersion": "2024-11-05",
+			"capabilities": {},
+			"clientInfo": {
+				"name": "octomind-health-check",
+				"version": "1.0.0"
+			}
+		}
+	})
+}
+
+fn create_tools_call_request(tool_name: &str, parameters: &Value) -> Value {
+	json!({
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {
+			"name": tool_name,
+			"arguments": parameters
+		}
+	})
+}
+
+// Shared function to parse tools from JSON-RPC response
+fn parse_tools_from_jsonrpc_response(
+	response: &Value,
+	server: &McpServerConfig,
+) -> Result<Vec<McpFunction>> {
+	let mut functions = Vec::new();
+
+	// Check for JSON-RPC error
+	if let Some(error) = response.get("error") {
+		return Err(anyhow::anyhow!("JSON-RPC error from MCP server: {}", error));
+	}
+
+	// Extract tools from result.tools
+	if let Some(result) = response.get("result") {
+		if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
+			for tool in tools {
+				if let (Some(name), Some(description)) = (
+					tool.get("name").and_then(|n| n.as_str()),
+					tool.get("description").and_then(|d| d.as_str()),
+				) {
+					// Check if this tool is enabled
+					if server.tools().is_empty()
+						|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
+					{
+						// Get the parameters from the inputSchema field if available
+						let parameters = tool.get("inputSchema").cloned().unwrap_or(json!({}));
+
+						functions.push(McpFunction {
+							name: name.to_string(),
+							description: description.to_string(),
+							parameters,
+						});
+					}
+				}
+			}
+		}
+	} else {
+		return Err(anyhow::anyhow!(
+			"Invalid JSON-RPC response: missing 'result' field"
+		));
+	}
+
+	Ok(functions)
+}
+
 // Get server function definitions (will start server if needed)
 pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFunction>> {
 	// Note: enabled check is now handled at the role level via server_refs
@@ -57,14 +140,26 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 				);
 			}
 
-			// Get schema URL - should be schema endpoint
-			let schema_url = format!("{}/tools/list", server_url); // Correct endpoint
+			// MCP uses JSON-RPC over HTTP with POST requests
+			let schema_url = server_url; // Use base URL for JSON-RPC
 
-			// Make request to get schema
-			let response = client.get(&schema_url).headers(headers).send().await?;
+			// Use shared JSON-RPC request builder
+			let jsonrpc_request = create_tools_list_request();
 
 			// Debug output
-			// println!("Schema response from HTTP server: {}", response.status());
+			crate::log_debug!(
+				"Making JSON-RPC tools/list request to HTTP server '{}' at URL: {}",
+				server.name(),
+				schema_url
+			);
+
+			// Make JSON-RPC POST request to get schema
+			let response = client
+				.post(&schema_url)
+				.headers(headers.clone())
+				.json(&jsonrpc_request)
+				.send()
+				.await?;
 
 			// Check if request was successful
 			if !response.status().is_success() {
@@ -74,66 +169,18 @@ pub async fn get_server_functions(server: &McpServerConfig) -> Result<Vec<McpFun
 				));
 			}
 
-			// Parse response
-			let schema: Value = response.json().await?;
+			// Parse JSON-RPC response
+			let jsonrpc_response: Value = response.json().await?;
 
-			// Debug output
-			// println!("Schema response body: {}", schema);
+			crate::log_debug!(
+				"JSON-RPC response from server '{}': {}",
+				server.name(),
+				serde_json::to_string_pretty(&jsonrpc_response)
+					.unwrap_or_else(|_| jsonrpc_response.to_string())
+			);
 
-			// Extract functions
-			let mut functions = Vec::new();
-
-			// Extract tools from result.tools if available
-			if let Some(result) = schema.get("result") {
-				if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
-					for func in tools {
-						if let (Some(name), Some(description)) = (
-							func.get("name").and_then(|n| n.as_str()),
-							func.get("description").and_then(|d| d.as_str()),
-						) {
-							// Check if this tool is enabled
-							if server.tools().is_empty()
-								|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
-							{
-								// Get the parameters from the inputSchema field if available
-								let parameters =
-									func.get("inputSchema").cloned().unwrap_or(json!({}));
-
-								functions.push(McpFunction {
-									name: name.to_string(),
-									description: description.to_string(),
-									parameters,
-								});
-							}
-						}
-					}
-				}
-			} else {
-				// Legacy support for functions directly in schema
-				if let Some(schema_functions) = schema.get("functions").and_then(|f| f.as_array()) {
-					for func in schema_functions {
-						if let (Some(name), Some(description)) = (
-							func.get("name").and_then(|n| n.as_str()),
-							func.get("description").and_then(|d| d.as_str()),
-						) {
-							// Check if this tool is enabled
-							if server.tools().is_empty()
-								|| crate::mcp::is_tool_allowed_by_patterns(name, server.tools())
-							{
-								// Get the parameters from the inputSchema field if available
-								let parameters =
-									func.get("inputSchema").cloned().unwrap_or(json!({}));
-
-								functions.push(McpFunction {
-									name: name.to_string(),
-									description: description.to_string(),
-									parameters,
-								});
-							}
-						}
-					}
-				}
-			}
+			// Use shared parser
+			let functions = parse_tools_from_jsonrpc_response(&jsonrpc_response, server)?;
 
 			Ok(functions)
 		}
@@ -164,7 +211,7 @@ pub async fn get_server_functions_cached(server: &McpServerConfig) -> Result<Vec
 	}
 
 	// Check if server is currently running
-	let is_running = is_server_running_for_cache_check(server_id);
+	let is_running = is_server_running_for_cache_check(server);
 
 	if is_running {
 		// Server is running - get fresh functions and cache them
@@ -210,6 +257,17 @@ pub async fn get_server_functions_cached(server: &McpServerConfig) -> Result<Vec
 // Helper function to get fallback functions when server is not running
 fn get_fallback_functions(server: &McpServerConfig) -> Result<Vec<McpFunction>> {
 	if !server.tools().is_empty() {
+		// For remote HTTP servers, don't show "server not started" since they're external
+		let description_suffix = if server.connection_type()
+			== crate::config::McpConnectionType::Http
+			&& server.url().is_some()
+			&& server.command().is_none()
+		{
+			"(remote server)"
+		} else {
+			"(server not started)"
+		};
+
 		// Return lightweight function entries based on configuration
 		Ok(server
 			.tools()
@@ -217,9 +275,10 @@ fn get_fallback_functions(server: &McpServerConfig) -> Result<Vec<McpFunction>> 
 			.map(|tool_name| McpFunction {
 				name: tool_name.clone(),
 				description: format!(
-					"External tool '{}' from server '{}' (server not started)",
+					"External tool '{}' from server '{}' {}",
 					tool_name,
-					server.name()
+					server.name(),
+					description_suffix
 				),
 				parameters: serde_json::json!({}),
 			})
@@ -231,9 +290,23 @@ fn get_fallback_functions(server: &McpServerConfig) -> Result<Vec<McpFunction>> 
 }
 
 // Optimized server running check that doesn't hold locks for long
-fn is_server_running_for_cache_check(server_name: &str) -> bool {
+// This function now requires server config to properly handle remote HTTP servers
+fn is_server_running_for_cache_check(server: &McpServerConfig) -> bool {
+	// For remote HTTP servers (have URL but no command), consider them always available
+	if server.connection_type() == McpConnectionType::Http
+		&& server.url().is_some()
+		&& server.command().is_none()
+	{
+		crate::log_debug!(
+			"Remote HTTP server '{}' is considered always available",
+			server.name()
+		);
+		return true;
+	}
+
+	// For local servers (have command) or stdin servers, check the process registry
 	let processes = process::SERVER_PROCESSES.read().unwrap();
-	if let Some(process_arc) = processes.get(server_name) {
+	if let Some(process_arc) = processes.get(server.name()) {
 		// Try to get a quick lock - if we can't, assume it's busy and running
 		if let Ok(mut process) = process_arc.try_lock() {
 			match &mut *process {
@@ -300,7 +373,28 @@ pub fn is_server_already_running_with_config(server: &crate::config::McpServerCo
 			true
 		}
 		McpConnectionType::Http | McpConnectionType::Stdin => {
-			// External servers - check the process registry
+			// For remote HTTP servers (have URL but no command), consider them always available
+			if server.connection_type() == McpConnectionType::Http
+				&& server.url().is_some()
+				&& server.command().is_none()
+			{
+				crate::log_debug!(
+					"Remote HTTP server '{}' is considered always available",
+					server.name()
+				);
+				// Update health status for remote servers
+				{
+					let mut restart_info_guard = process::SERVER_RESTART_INFO.write().unwrap();
+					let info = restart_info_guard
+						.entry(server.name().to_string())
+						.or_default();
+					info.health_status = process::ServerHealth::Running;
+					info.last_health_check = Some(std::time::SystemTime::now());
+				}
+				return true;
+			}
+
+			// External servers with local processes - check the process registry
 			let is_process_running = {
 				let processes = process::SERVER_PROCESSES.read().unwrap();
 				if let Some(process_arc) = processes.get(server.name()) {
@@ -516,14 +610,11 @@ async fn execute_tool_call_internal(
 				);
 			}
 
-			// Get execution URL
-			let execute_url = format!("{}/tools/call", server_url);
+			// Use base URL for JSON-RPC tool execution
+			let execute_url = server_url;
 
-			// Prepare request body
-			let request_body = json!({
-				"name": tool_name,
-				"arguments": parameters
-			});
+			// Use shared JSON-RPC request builder
+			let request_body = create_tools_call_request(tool_name, parameters);
 
 			// Check for cancellation one more time before sending request
 			if let Some(ref token) = cancellation_token {
@@ -552,15 +643,15 @@ async fn execute_tool_call_internal(
 				));
 			}
 
-			// Parse response
+			// Parse JSON-RPC response
 			let result: Value = response.json().await?;
 
-			// Extract result or error from the response
-			let output = if let Some(_error) = result.get("error") {
+			// Extract result or error from the JSON-RPC response
+			let output = if let Some(error) = result.get("error") {
 				json!({
 					"error": true,
 					"success": false,
-					"message": result.get("message").and_then(|m| m.as_str()).unwrap_or("Server error")
+					"message": error.get("message").and_then(|m| m.as_str()).unwrap_or("Server error")
 				})
 			} else {
 				result.get("result").cloned().unwrap_or(json!("No result"))
@@ -600,7 +691,13 @@ async fn get_server_base_url(server: &McpServerConfig) -> Result<String> {
 					server.name(),
 					url
 				);
-				Ok(url.trim_end_matches("/").to_string())
+				let base_url = url.trim_end_matches("/").to_string();
+				crate::log_debug!(
+					"Processed base URL for server '{}': {}",
+					server.name(),
+					base_url
+				);
+				Ok(base_url)
 			} else if server.command().is_some() {
 				// This is a local server, ensure it's running
 				crate::log_debug!(

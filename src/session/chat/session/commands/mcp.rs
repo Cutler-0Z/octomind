@@ -669,10 +669,33 @@ async fn perform_http_health_check_sync(server: &crate::config::McpServerConfig)
 			.timeout(std::time::Duration::from_secs(5)) // 5 second timeout for health checks
 			.build()?;
 
-		// Try to hit the tools/list endpoint to check if server is responding
-		let health_url = format!("{}/tools/list", url.trim_end_matches("/"));
+		// Try to make a JSON-RPC tools/list request to check if server is responding
+		let health_url = url.trim_end_matches("/");
 
-		match client.get(&health_url).send().await {
+		// Use the same header setup as the main server implementation
+		let mut headers = reqwest::header::HeaderMap::new();
+		headers.insert(
+			reqwest::header::CONTENT_TYPE,
+			reqwest::header::HeaderValue::from_static("application/json"),
+		);
+
+		if let Some(token) = server.auth_token() {
+			headers.insert(
+				reqwest::header::AUTHORIZATION,
+				reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+			);
+		}
+
+		// Use tools/list for health check (same as main functionality)
+		let jsonrpc_request = crate::mcp::server::create_tools_list_request();
+
+		match client
+			.post(health_url)
+			.headers(headers)
+			.json(&jsonrpc_request)
+			.send()
+			.await
+		{
 			Ok(response) => {
 				let is_healthy =
 					response.status().is_success() || response.status().is_client_error();

@@ -28,6 +28,7 @@ pub struct ProvidersConfig {
 	pub google: ProviderConfig,
 	pub amazon: ProviderConfig,
 	pub cloudflare: ProviderConfig,
+	pub deepseek: ProviderConfig,
 }
 
 // Legacy OpenRouterConfig for backward compatibility

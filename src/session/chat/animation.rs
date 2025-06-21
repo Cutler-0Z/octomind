@@ -17,7 +17,7 @@
 use anyhow::Result;
 use colored::*;
 use crossterm::{cursor, execute};
-use std::io::{stdout, Write};
+use std::io::{stdout, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -68,4 +68,24 @@ pub async fn show_no_animation(cancel_flag: Arc<AtomicBool>, _cost: f64) -> Resu
 		tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 	}
 	Ok(())
+}
+
+// Smart animation that automatically detects interactive vs non-interactive mode
+pub async fn show_smart_animation(cancel_flag: Arc<AtomicBool>, cost: f64) -> Result<()> {
+	if std::io::stdin().is_terminal() {
+		// Interactive mode - show full animation
+		show_loading_animation(cancel_flag, cost).await
+	} else {
+		// Non-interactive mode (piped, run command, etc.) - no animation
+		show_no_animation(cancel_flag, cost).await
+	}
+}
+
+// Display generation message for non-interactive mode (without animation)
+pub fn show_generation_message_static(cost: f64) {
+	if !std::io::stdin().is_terminal() {
+		// Non-interactive mode - show static message with pricing
+		println!("Generating response... ${:.5}", cost);
+	}
+	// Interactive mode - do nothing (animation will handle it)
 }

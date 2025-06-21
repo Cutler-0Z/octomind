@@ -14,7 +14,7 @@
 
 // Layered response processing implementation
 
-use super::animation::show_loading_animation;
+use super::animation::show_smart_animation;
 use crate::config::Config;
 use crate::session::chat::session::ChatSession;
 use anyhow::Result;
@@ -65,7 +65,7 @@ pub async fn process_layered_response(
 	let animation_cancel_clone = animation_cancel.clone();
 	let current_cost = chat_session.session.info.total_cost;
 	let animation_task = tokio::spawn(async move {
-		let _ = show_loading_animation(animation_cancel_clone, current_cost).await;
+		let _ = show_smart_animation(animation_cancel_clone, current_cost).await;
 	});
 
 	// Process through the layers using the modular layered architecture

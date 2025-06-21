@@ -15,7 +15,7 @@
 // Tool result processor module - handles tool result processing, caching, and follow-up API calls
 
 use crate::config::Config;
-use crate::session::chat::animation::show_loading_animation;
+use crate::session::chat::animation::show_smart_animation;
 use crate::session::chat::session::ChatSession;
 use crate::{log_debug, log_info};
 use anyhow::Result;
@@ -69,7 +69,7 @@ pub async fn process_tool_results(
 	let animation_cancel_flag = animation_cancel.clone();
 	let current_cost = chat_session.session.info.total_cost;
 	let animation_task = tokio::spawn(async move {
-		let _ = show_loading_animation(animation_cancel_flag, current_cost).await;
+		let _ = show_smart_animation(animation_cancel_flag, current_cost).await;
 	});
 
 	// 🔍 PERFORMANCE DEBUG: Track where time is spent during tool result processing

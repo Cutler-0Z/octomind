@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::session::Session;
 use anyhow::Result;
 use colored::*;
+use std::io::IsTerminal;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -172,21 +173,26 @@ impl LayeredOrchestrator {
 			println!("{}", "Input:".bright_blue());
 			println!("{}", current_input);
 
-			// Clear any previous animation line and show current cost
-			print!("\r                                                                  \r");
-			println!(
-				"{} ${:.5}",
-				"Generating response with current cost:".bright_cyan(),
-				total_cost
-			);
+			// Clear any previous animation line and show current cost (only in interactive mode)
+			if std::io::stdin().is_terminal() {
+				print!("\r                                                                  \r");
+				println!(
+					"{} ${:.5}",
+					"Generating response with current cost:".bright_cyan(),
+					total_cost
+				);
 
-			// Debug info for model and settings
-			println!(
-				"{} {} (temp: {})",
-				"Using model:".bright_magenta(),
-				layer.config().get_effective_model(&session.info.model),
-				layer.config().temperature
-			);
+				// Debug info for model and settings
+				println!(
+					"{} {} (temp: {})",
+					"Using model:".bright_magenta(),
+					layer.config().get_effective_model(&session.info.model),
+					layer.config().temperature
+				);
+			} else {
+				// Non-interactive mode - simple static message
+				println!("Generating response... ${:.5}", total_cost);
+			}
 
 			if !layer.config().mcp.server_refs.is_empty() {
 				if layer.config().mcp.allowed_tools.is_empty() {

@@ -32,7 +32,9 @@ mod tool_error_tracker;
 mod tool_processor;
 
 // Re-export main structures and functions
-pub use animation::{show_loading_animation, show_no_animation};
+pub use animation::{
+	show_generation_message_static, show_loading_animation, show_no_animation, show_smart_animation,
+};
 pub use assistant_output::print_assistant_response;
 pub use command_executor::{
 	command_exists, execute_command_layer, get_command_help, list_available_commands,

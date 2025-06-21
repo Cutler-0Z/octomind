@@ -26,6 +26,7 @@ pub mod cloudflare;
 pub mod google;
 pub mod openai;
 pub mod openrouter;
+pub mod deepseek;
 
 // Re-export provider implementations
 pub use amazon::AmazonBedrockProvider;
@@ -34,6 +35,7 @@ pub use cloudflare::CloudflareWorkersAiProvider;
 pub use google::GoogleVertexProvider;
 pub use openai::OpenAiProvider;
 pub use openrouter::OpenRouterProvider;
+pub use deepseek::DeepSeekProvider;
 
 /// Common token usage structure across all providers
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -165,7 +167,8 @@ impl ProviderFactory {
 			"google" => Ok(Box::new(GoogleVertexProvider::new())),
 			"amazon" => Ok(Box::new(AmazonBedrockProvider::new())),
 			"cloudflare" => Ok(Box::new(CloudflareWorkersAiProvider::new())),
-			_ => Err(anyhow::anyhow!("Unsupported provider: {}. Supported providers: openrouter, openai, anthropic, google, amazon, cloudflare", provider_name)),
+			"deepseek" => Ok(Box::new(DeepSeekProvider::new())),
+			_ => Err(anyhow::anyhow!("Unsupported provider: {}. Supported providers: openrouter, openai, anthropic, google, amazon, cloudflare, deepseek", provider_name)),
 		}
 	}
 

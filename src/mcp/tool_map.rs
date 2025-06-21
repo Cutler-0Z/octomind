@@ -30,7 +30,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 /// Global tool map singleton - initialized once at startup
 static TOOL_MAP: OnceLock<Arc<RwLock<ToolMapState>>> = OnceLock::new();
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct ToolMapState {
 	/// Tool name -> Server config mapping
 	tool_to_server: HashMap<String, McpServerConfig>,
@@ -38,16 +38,6 @@ struct ToolMapState {
 	initialized: bool,
 	/// Configuration hash used to detect if reinitialization is needed
 	config_hash: u64,
-}
-
-impl Default for ToolMapState {
-	fn default() -> Self {
-		Self {
-			tool_to_server: HashMap::new(),
-			initialized: false,
-			config_hash: 0,
-		}
-	}
 }
 
 /// Initialize the global tool map after MCP servers have been started
@@ -192,13 +182,13 @@ async fn build_tool_server_map_internal(
 						crate::mcp::get_cached_internal_functions(
 							"developer",
 							server.tools(),
-							|| crate::mcp::dev::get_all_functions(),
+							crate::mcp::dev::get_all_functions,
 						)
 					}
 					"filesystem" => crate::mcp::get_cached_internal_functions(
 						"filesystem",
 						server.tools(),
-						|| crate::mcp::fs::get_all_functions(),
+						crate::mcp::fs::get_all_functions,
 					),
 					"agent" => {
 						// For agent server, get all agent functions based on config

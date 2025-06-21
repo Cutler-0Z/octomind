@@ -1,239 +1,168 @@
-# OCTOMIND PROJECT GUIDE
+# OCTOMIND DEVELOPMENT GUIDE
 
-## 🎯 CORE PRINCIPLES
+## 🎯 CORE ARCHITECTURE
 
-### STRICT CONFIG ARCHITECTURE
-- **NO FALLBACKS**: Everything defined in config template must be explicitly set
-- **NO DEFAULTS IN CODE**: All default values are in `config-templates/default.toml`
-- **ENVIRONMENT PRECEDENCE**: Environment variables ALWAYS override config file
-- **SECURITY FIRST**: API keys ONLY via environment variables, never in config files
+**Session-First Design**: Everything happens in interactive AI sessions with MCP tools
+**Template-Based Config**: All defaults in `config-templates/default.toml`, NO hardcoded values
+**Role-Based Access**: Developer (full tools), Assistant (chat only), Custom roles
+**Layered Processing**: query_processor → context_generator → developer layers
+**Custom Commands**: `/run <command>` executes configured layer-based commands
+**Agent System**: `agent_<name>(task="...")` MCP tools route tasks to specialized AI layers
+**Cache & Cost**: 2-marker cache system + automatic cost tracking across sessions/layers/tools
 
-## 🏗️ PROJECT ARCHITECTURE
+## 📍 WHERE TO LOOK BY TASK
 
-### SESSION-FIRST APPROACH
-- Everything happens in interactive AI sessions
-- No separate indexing or search commands
-- MCP tools integrated for development operations
+### 🔧 CONFIGURATION ISSUES
+**Template & Loading:**
+- `config-templates/default.toml` - ALL defaults and structure
+- `src/config/loading.rs` - Config loading, template injection, env overrides
+- `src/config/mod.rs` - Main Config struct and validation
 
-### ROLE-BASED CONFIGURATION
-- **Developer Role**: Full tools, layered processing, project context
-- **Assistant Role**: Chat-only, minimal tools, lightweight
-- **Custom Roles**: Inherit from assistant, configurable capabilities
+**Specific Config Types:**
+- **Roles**: `src/config/roles.rs` + template `[[roles]]` sections
+- **MCP Servers**: `src/config/mcp.rs` + template `[[mcp.servers]]` sections
+- **Layers**: `src/session/layers/layer_trait.rs` + template `[[layers]]` sections
+- **Commands**: Template `[[commands]]` sections (use same layer system)
+- **Agents**: `src/config/mod.rs` AgentConfig + template (route to layers via MCP)
+- **Providers**: `src/providers/` directory
 
-### LAYERED PROCESSING SYSTEM
-1. **Query Processor** → Refines user requests
-2. **Context Generator** → Collects project information
-3. **Developer Layer** → Executes actual work
+### 🎮 SESSION BEHAVIOR
+**Core Session Logic:**
+- `src/session/chat/session/runner.rs` - Main interactive session loop
+- `src/session/chat/session/commands/` - All `/command` implementations
+- `src/session/chat/response.rs` - Response processing orchestrator
 
-### MCP TOOL ARCHITECTURE
-- **Built-in Servers**: developer, filesystem, web, agent, octocode
-- **Server Registry**: Centralized configuration in `[mcp.servers]`
-- **Role References**: Roles reference servers via `server_refs`
+**Context & Memory:**
+- `src/session/chat/context_truncation.rs` - Smart context management
+- `src/session/cache.rs` - Caching system (2-marker approach)
+- `src/session/chat/input.rs` - User input handling with history
 
-## 📁 KEY FILES TO EXAMINE
+**Cost & Performance:**
+- `src/session/chat/cost_tracker.rs` - Cost accumulation across sessions/layers/tools
+- `src/session/mod.rs` SessionInfo - Token/cost tracking per session
+- Auto cache markers: system messages, tools (supports caching models only)
+- 2-marker system: content cache management for cost optimization
 
-### Configuration System
-- `config-templates/default.toml` - Master template with all defaults
-- `src/config/mod.rs` - Main config structures and logic
-- `src/config/loading.rs` - Config loading and template injection
+### 🔧 MCP TOOLS
+**Tool System Core:**
+- `src/mcp/mod.rs` - Tool routing, execution, `try_execute_tool_call()`
+- `src/mcp/tool_map.rs` - Static tool-to-server mapping for performance
 
-### Session Management
-- `src/session/` - Core session handling
-- `src/session/providers/` - AI provider implementations
-- `src/session/layers/` - Layered processing system
+**Built-in Tool Servers:**
+- **Developer**: `src/mcp/dev/` (shell execution)
+- **Filesystem**: `src/mcp/fs/` (text_editor, list_files)
+- **Web**: `src/mcp/web/` (web_search, read_html, image_search)
+- **Agent**: `src/mcp/agent/` (layer routing for AI tasks via `agent_<name>` tools)
 
-### MCP Integration
-- `src/mcp/` - MCP protocol implementation
-- Built-in servers: developer, filesystem, web, agent, octocode
+**External Server Management:**
+- `src/mcp/server.rs` - HTTP server communication
+- `src/mcp/process.rs` - Stdin server process management
+- `src/mcp/health_monitor.rs` - Server health monitoring
 
-## 🔧 CONFIGURATION APPROACH
+### 🤖 AI PROVIDERS
+**Provider System:**
+- `src/providers/mod.rs` - Provider trait and factory
+- `src/providers/*/` - Individual provider implementations (OpenRouter, OpenAI, Anthropic, etc.)
 
-### Template-Based Configuration
-- All defaults in `config-templates/default.toml`
-- No hardcoded defaults in source code
-- When no config exists, template is copied automatically
-- All settings must be explicitly defined
+### 📊 LAYERED PROCESSING & COMMANDS
+**Layer Architecture:**
+- `src/session/layers/types/generic.rs` - Main layer implementation
+- `src/session/layers/orchestrator.rs` - Layer execution orchestration
+- `src/session/layers/layer_trait.rs` - Layer configuration and traits
 
-### Required Configuration Elements
-```toml
-version = 1  # DO NOT MODIFY
-model = "provider:model"  # Single system-wide model
-log_level = "none|info|debug"
-custom_instructions_file_name = "INSTRUCTIONS.md"
-```
+**Custom Commands:**
+- `src/session/chat/command_executor.rs` - `/run <command>` execution
+- Template `[[commands]]` sections - Command definitions (use layer system)
+- Commands execute layers without storing in session history
 
-### Model Format
-Always use `provider:model` format:
-- `openrouter:anthropic/claude-sonnet-4`
-- `openai:gpt-4o`
-- `anthropic:claude-3-5-sonnet`
+**Agent System:**
+- `src/mcp/agent/functions.rs` - Dynamic `agent_<name>` tool generation
+- `src/config/mod.rs` AgentConfig - Agent-to-layer routing configuration
+- Template agents section - Agent definitions that route to layers via MCP
 
-## 🎯 WHERE TO LOOK FIRST - SPECIFIC GUIDANCE
+## 🐛 DEBUGGING BY SYMPTOM
 
-### 🔍 ALWAYS START HERE
-1. **Check memories first** - `remember("your search terms")` for past work and decisions
-2. **Examine config template** - `config-templates/default.toml` shows all available settings
-3. **Check documentation** - `doc/` directory for comprehensive guides
-4. **Use rg for exact lookups** - Never use semantic_search for function names or symbols
+### Tool Not Working
+1. **Check tool routing**: `src/mcp/mod.rs` → `build_tool_server_map()`
+2. **Check tool execution**: `src/mcp/mod.rs` → `try_execute_tool_call()`
+3. **Check tool definitions**: `src/mcp/*/functions.rs` files
+4. **Check allowed_tools patterns**: Role/layer config in template
 
-### 🛠️ WORKING WITH CONFIGURATION
-**FIRST LOOK:**
-- `config-templates/default.toml` - Master template with ALL defaults
-- `src/config/mod.rs` - Main config structures and validation
-- `src/config/loading.rs` - Config loading, merging, and template injection
+### Configuration Not Loading
+1. **Template injection**: `src/config/loading.rs` → `load()`
+2. **Environment overrides**: Check `OCTOMIND_*` variables
+3. **Validation errors**: `src/config/validation.rs` → `validate()`
 
-**SPECIFIC ISSUES:**
-- **Role configuration**: `src/config/roles.rs` + template `[[roles]]` sections
-- **MCP server setup**: `src/config/mcp.rs` + template `[[mcp.servers]]` sections
-- **Tool filtering patterns**: `src/config/mcp.rs` → `expand_patterns_for_server()`
-- **Provider setup**: `src/config/providers.rs` + `src/session/providers/`
-- **Layer configuration**: `src/session/layers/` + template `[[layers]]` sections
+### Session Commands Failing
+1. **Command routing**: `src/session/chat/session/commands/mod.rs`
+2. **Individual commands**: `src/session/chat/session/commands/*.rs`
+3. **Command permissions**: Check role configuration
 
-### 🎮 WORKING WITH SESSIONS
-**FIRST LOOK:**
-- `src/session/mod.rs` - Main session orchestration
-- `src/session/chat/` - Core chat session handling
-- `src/session/layers/` - Layered processing system
+### Provider/Model Issues
+1. **Provider implementation**: `src/providers/*/` specific provider
+2. **API keys**: Check `*_API_KEY` environment variables
+3. **Model format**: Must be `provider:model` format
 
-**SPECIFIC ISSUES:**
-- **Session commands**: `src/session/chat/session/commands.rs`
-- **Context management**: `src/session/chat/context_truncation.rs`
-- **Message handling**: `src/session/chat/input.rs` and `src/session/chat/response.rs`
-- **Layer processing**: `src/session/layers/generic.rs`
-- **Session state**: `src/session/chat/session/mod.rs`
+### Layer Processing Issues
+1. **Layer execution**: `src/session/layers/types/generic.rs` → `process()`
+2. **Layer orchestration**: `src/session/layers/orchestrator.rs`
+3. **Input/output modes**: Check layer config in template
 
-### 🔧 WORKING WITH MCP TOOLS
-**FIRST LOOK:**
-- `src/mcp/mod.rs` - Main MCP dispatcher and tool routing
-- `src/mcp/*/functions.rs` - Tool function definitions for each server
+### Cache/Cost Issues
+1. **Cache markers**: `src/session/cache.rs` → `manage_content_cache_markers()`
+2. **Cost tracking**: `src/session/chat/cost_tracker.rs` → `track_exchange_cost()`
+3. **Token counting**: `src/session/mod.rs` SessionInfo struct
+4. **Cache support**: Check if model supports caching (Anthropic Claude, etc.)
 
-**SPECIFIC SERVERS:**
-- **Developer tools**: `src/mcp/dev/` (shell, code analysis)
-- **Filesystem tools**: `src/mcp/fs/` (text_editor, list_files)
-- **Web tools**: `src/mcp/web/` (web_search, image_search, video_search, news_search, read_html)
-- **Agent tools**: `src/mcp/agent/` (task routing to AI layers)
+## 🚀 COMMON MODIFICATIONS
 
-**TOOL ISSUES:**
-- **Tool routing**: `src/mcp/mod.rs` → `try_execute_tool_call()`
-- **Tool definitions**: `src/mcp/*/functions.rs` files
-- **Tool execution**: `src/mcp/*/core.rs` or individual tool files
-- **Tool filtering**: `src/mcp/mod.rs` → `filter_tools_by_patterns()` and pattern matching
-- **Server health**: `src/mcp/health_monitor.rs`
+### Add New MCP Tool
+1. **Function definition**: Add to `src/mcp/*/functions.rs`
+2. **Implementation**: Add to `src/mcp/*/` (core.rs or new file)
+3. **Routing**: Update `src/mcp/mod.rs` → `try_execute_tool_call()`
 
-### 🤖 WORKING WITH AI PROVIDERS
-**FIRST LOOK:**
-- `src/session/providers/mod.rs` - Provider trait and factory
-- `src/session/providers/` - Individual provider implementations
+### Add New Provider
+1. **Implementation**: Create `src/providers/new_provider.rs`
+2. **Registration**: Add to `src/providers/mod.rs` factory
+3. **Config**: Add provider section to template
 
-**SPECIFIC PROVIDERS:**
-- **OpenRouter**: `src/session/providers/openrouter.rs`
-- **OpenAI**: `src/session/providers/openai.rs`
-- **Anthropic**: `src/session/providers/anthropic.rs`
-- **Google**: `src/session/providers/google.rs`
-- **Amazon**: `src/session/providers/amazon.rs`
-- **Cloudflare**: `src/session/providers/cloudflare.rs`
-
-### 📊 WORKING WITH LAYERS
-**FIRST LOOK:**
-- `src/session/layers/generic.rs` - Main layer implementation
-- `src/session/layers/mod.rs` - Layer orchestration
-- `config-templates/default.toml` - Layer configurations
-
-**LAYER TYPES:**
-- **Query Processor**: Refines user input (output_mode: "none")
-- **Context Generator**: Gathers project context (output_mode: "replace")
-- **Developer**: Main processing layer (output_mode: "append")
-- **Reducer**: Context compression (output_mode: "replace")
-
-### 🐛 DEBUGGING SPECIFIC ISSUES
-
-#### Configuration Not Loading
-1. `src/config/loading.rs` → `load_config_with_template()`
-2. `src/config/mod.rs` → `Config::from_file()`
-3. Check environment variable overrides in `src/config/loading.rs`
-
-#### Tool Not Working
-1. `src/mcp/mod.rs` → `build_tool_server_map()` (tool routing)
-2. `src/mcp/mod.rs` → `try_execute_tool_call()` (execution)
-3. `src/mcp/mod.rs` → `filter_tools_by_patterns()` (pattern filtering)
-4. Specific tool server in `src/mcp/*/` directories
-5. Tool function definition in `src/mcp/*/functions.rs`
-6. Check `allowed_tools` patterns in role/layer config
-
-#### Session Behavior Issues
-1. `src/session/chat/session/mod.rs` → main session loop
-2. `src/session/chat/response.rs` → response generation
-3. `src/session/layers/generic.rs` → layer processing
-4. `src/session/chat/context_truncation.rs` → context management
-
-#### Provider/Model Issues
-1. `src/session/providers/` → specific provider implementation
-2. `src/session/providers/mod.rs` → provider factory and trait
-3. Check API key environment variables
-4. Model format validation in provider code
-
-#### Layer Processing Issues
-1. `src/session/layers/generic.rs` → `execute()` method
-2. `src/session/layers/mod.rs` → layer orchestration
-3. Layer configuration in `config-templates/default.toml`
-4. Input/output mode handling in layer execution
-
-## 🚀 COMMON DEVELOPMENT TASKS
-
-### Adding a New MCP Tool
-1. **Choose server**: Determine which server (`dev`, `fs`, `web`, `agent`) or create new
-2. **Function definition**: Add to `src/mcp/*/functions.rs`
-3. **Implementation**: Add to `src/mcp/*/` (core.rs or dedicated file)
-4. **Tool routing**: Update `src/mcp/mod.rs` → `try_execute_tool_call()`
-5. **Documentation**: Update `doc/06-advanced.md` tool reference
-
-### Adding a New AI Provider
-1. **Provider trait**: Implement in `src/session/providers/new_provider.rs`
-2. **Factory registration**: Add to `src/session/providers/mod.rs`
-3. **Configuration**: Add provider-specific config to template
-4. **Documentation**: Update `doc/04-providers.md`
-
-### Adding a New Configuration Option
+### Add New Configuration
 1. **Template first**: Add to `config-templates/default.toml`
-2. **Struct definition**: Add to appropriate `src/config/*.rs` file
-3. **Loading logic**: Update `src/config/loading.rs` if needed
-4. **Validation**: Add validation in config struct
-5. **Documentation**: Update `doc/03-configuration.md`
+2. **Struct**: Add to appropriate `src/config/*.rs`
+3. **Validation**: Add validation rules
 
-### Adding a New Layer Type
-1. **Configuration**: Add layer config to template `[[layers]]`
-2. **Implementation**: Use `src/session/layers/generic.rs` (no new code needed)
-3. **Integration**: Configure input_mode, output_mode, and MCP access
-4. **Documentation**: Update `doc/07-command-layers.md`
+### Add New Layer
+1. **Config**: Add to template `[[layers]]` section
+2. **No code needed**: Uses generic layer implementation
+3. **Configure**: Set input_mode, output_mode, MCP access
 
-### Debugging Performance Issues
-1. **Session timing**: Check `src/session/chat/response.rs` timing code
-2. **Tool execution**: Check `src/mcp/mod.rs` execution timing
-3. **Provider latency**: Check individual provider implementations
-4. **Context size**: Check `src/session/chat/context_truncation.rs`
+### Add New Custom Command
+1. **Config**: Add to template `[[commands]]` section (same as layer config)
+2. **Usage**: `/run <command_name>` executes the layer without storing in history
+3. **No code needed**: Uses existing command executor + layer system
 
-### Debugging Memory/Token Issues
-1. **Context truncation**: `src/session/chat/context_truncation.rs`
-2. **Token estimation**: `src/session/mod.rs` → `estimate_tokens()`
-3. **Large response handling**: `src/mcp/mod.rs` → `handle_large_response()`
-4. **Cache management**: `src/session/cache/` directory
+### Add New Agent
+1. **Layer**: First create the layer in `[[layers]]` section
+2. **Agent config**: Add to template agents section with layer name
+3. **Usage**: `agent_<name>(task="...")` MCP tool routes to the layer
 
-## 📋 QUICK REFERENCE
+## 📋 CRITICAL PATTERNS
 
-### Key File Patterns
-- **Configuration**: `src/config/*.rs` + `config-templates/default.toml`
-- **Session Logic**: `src/session/chat/` + `src/session/layers/`
-- **MCP Tools**: `src/mcp/*/functions.rs` + `src/mcp/*/core.rs`
-- **AI Providers**: `src/session/providers/*.rs`
-- **Documentation**: `doc/*.md` files
+### File Patterns
+- **Config**: `src/config/*.rs` + `config-templates/default.toml`
+- **Tools**: `src/mcp/*/functions.rs` + `src/mcp/*/core.rs`
+- **Sessions**: `src/session/chat/` + `src/session/layers/`
+- **Providers**: `src/providers/*/`
 
-### Environment Variables to Check
-- **API Keys**: `*_API_KEY` variables for each provider
-- **Config Overrides**: `OCTOMIND_*` variables for any config setting
-- **Special Keys**: `BRAVE_API_KEY` for web search functionality
+### Environment Variables
+- **API Keys**: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `BRAVE_API_KEY`, etc.
+- **Config Overrides**: `OCTOMIND_*` for any config setting
+- **Debug**: Use `/loglevel debug` in sessions
 
-### Testing Approach
-- **Unit tests**: `cargo test` for individual components
-- **Integration**: Test with actual config and sessions
-- **Tool testing**: Use `/loglevel debug` in sessions for detailed output
-- **Provider testing**: Test with different models and providers
+### Key Commands
+- **Config**: `octomind config --show` to see current config
+- **Sessions**: `octomind session` for interactive mode
+- **Debug**: `/mcp info` to check tool status in sessions
+- **Custom Commands**: `/run <command_name>` to execute configured layers
+- **Agents**: Use `agent_<name>(task="description")` MCP tools for specialized AI tasks
+- **Cache**: `/cache` to manually mark cache points, `/info` to see costs/tokens
